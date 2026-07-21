@@ -1,0 +1,178 @@
+{% extends "base.html" %}
+{% block title %}My Dashboard{% endblock %}
+{% block page_title %}My Classroom{% endblock %}
+
+{% block content %}
+<div style="max-width:1000px;margin:0 auto;">
+
+  {% if not cls %}
+  <div class="card" style="text-align:center;padding:48px;">
+    <div style="font-size:48px;margin-bottom:16px;">⚠️</div>
+    <div style="font-size:18px;font-weight:700;color:#92400e;">You are not assigned to any class.</div>
+    <div style="color:#64748b;margin-top:8px;">Please contact your administrator.</div>
+  </div>
+  {% else %}
+
+  {% if mappings %}
+  <!-- Multi-Class Subject Mapping Switcher -->
+  <div class="card bg-white" style="margin-bottom:20px;">
+    <div class="card-body" style="padding:16px 20px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
+      <div style="font-weight:700; color:#334155; font-size:15px; display:flex; align-items:center; gap:8px;">
+        <span>🏫</span> Active Period Context:
+      </div>
+      <form method="GET" action="{{ url_for('teacher.dashboard') }}" style="display:flex; align-items:center; gap:8px;">
+        <select name="active_mapping_id" onchange="this.form.submit()" class="form-control form-select" style="min-width:240px; padding:8px 12px; border:2px solid #e2e8f0; border-radius:10px; font-weight:600; outline:none; font-size:14px; cursor:pointer;">
+          {% for mapping in mappings %}
+          <option value="{{ mapping.id }}" {% if mapping.class_ref.id == cls.id and mapping.subject == subject %}selected{% endif %}>
+            {{ mapping.class_ref.display_name }} — {{ mapping.subject }}
+          </option>
+          {% endfor %}
+        </select>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Class Banner -->
+  <div class="card" style="margin-bottom:24px;background:linear-gradient(135deg,#1e3a8a,#4f46e5,#7c3aed);border:none;">
+    <div class="card-body" style="padding:24px 28px;color:white;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:16px;">
+      <div>
+        <div style="font-size:13px;font-weight:600;opacity:0.7;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px;">My Active Classroom</div>
+        <div style="font-family:'Poppins',sans-serif;font-size:32px;font-weight:800;line-height:1;">{{ cls.display_name }}</div>
+        {% if subject %}
+        <div style="font-size:16px;font-weight:700;color:#fbbf24;margin-top:6px;display:flex;align-items:center;gap:6px;">
+          <span>📖</span> Subject: {{ subject }}
+        </div>
+        {% endif %}
+        <div style="margin-top:8px;opacity:0.8;font-size:14px;">{{ today.strftime('%A, %d %B %Y') }}</div>
+      </div>
+
+      <!-- Syllabus Pace indicator visual progress bar -->
+      {% if syllabus_pace %}
+      <div style="background:rgba(15,23,42,0.4); border:1px solid rgba(255,255,255,0.1); padding:14px 20px; min-width:260px; border-radius:12px;">
+        <div style="display:flex;justify-content:space-between;font-size:12px;font-weight:700;color:#e2e8f0;margin-bottom:6px;">
+          <span>Syllabus covered:</span>
+          <span>{{ syllabus_pace.percent_covered }}%</span>
+        </div>
+        <div class="progress-bar-wrap" style="height:8px;background:rgba(255,255,255,0.15);border-radius:4px;overflow:hidden;width:100%;">
+          <div class="progress-bar-fill" style="width: {{ syllabus_pace.percent_covered }}%; height:100%; background:{% if syllabus_pace.status == 'delayed' %}#f43f5e{% else %}#10b981{% endif %}; border-radius:4px;"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:11px;margin-top:6px;color:#cbd5e1;font-weight:600;">
+          <span>Pace Status:</span>
+          <span style="color:{% if syllabus_pace.status == 'delayed' %}#f87171{% elif syllabus_pace.status == 'ahead' %}#60a5fa{% else %}#34d399{% endif %};">
+            {{ syllabus_pace.status_label }}
+          </span>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Today's Tasks -->
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:24px;">
+
+    <!-- Daily Log Status -->
+    <div class="kpi-card" style="border-top:4px solid {% if today_log %}#10b981{% else %}#f43f5e{% endif %};">
+      <div class="kpi-icon" style="background:{% if today_log %}#d1fae5{% else %}#fee2e2{% endif %};">
+        {{ '📝' }}
+      </div>
+      <div class="kpi-value" style="font-size:20px;color:{% if today_log %}#10b981{% else %}#f43f5e{% endif %};">
+        {% if today_log %}Submitted ✓{% else %}Pending{% endif %}
+      </div>
+      <div class="kpi-label">Today's Daily Log</div>
+      <div style="margin-top:12px;">
+        <a href="{{ url_for('teacher.daily_log') }}"
+           class="btn {% if today_log %}btn-outline{% else %}btn-primary{% endif %} btn-sm">
+          {{ '✏️ Update' if today_log else '📝 Submit Now' }}
+        </a>
+      </div>
+    </div>
+
+    <!-- Attendance -->
+    <div class="kpi-card" style="border-top:4px solid #10b981;">
+      <div class="kpi-icon" style="background:#d1fae5;">✅</div>
+      <div class="kpi-value" style="color:#10b981;">{{ present_count }}/{{ total_students }}</div>
+      <div class="kpi-label">Present Today</div>
+      <div style="margin-top:12px;">
+        <a href="{{ url_for('teacher.attendance') }}" class="btn btn-success btn-sm">Mark Attendance</a>
+      </div>
+    </div>
+
+    <!-- Pillar Scores -->
+    <div class="kpi-card" style="border-top:4px solid #7c3aed;">
+      <div class="kpi-icon" style="background:#ede9fe;">⭐</div>
+      <div class="kpi-value" style="color:#7c3aed;">5 Pillars</div>
+      <div class="kpi-label">Weekly Score Entry</div>
+      <div style="margin-top:12px;">
+        <a href="{{ url_for('teacher.pillars') }}" class="btn btn-primary btn-sm">Enter Scores</a>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Today's Log Summary -->
+  {% if today_log %}
+  <div class="card" style="margin-bottom:24px;">
+    <div class="card-header">
+      <h2>📋 Today's Log Summary</h2>
+      <a href="{{ url_for('teacher.daily_log') }}" class="btn btn-outline btn-sm">✏️ Edit</a>
+    </div>
+    <div class="card-body" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:16px;">
+      <div>
+        <div style="font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px;">Lesson Done</div>
+        <div style="font-size:15px;font-weight:600;color:{% if today_log.lesson_completed %}#10b981{% else %}#f43f5e{% endif %};">
+          {{ '✓ Yes' if today_log.lesson_completed else '✗ No' }}
+        </div>
+      </div>
+      <div>
+        <div style="font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px;">Topic Covered</div>
+        <div style="font-size:14px;color:#334155;">{{ today_log.syllabus_topic or '—' }}</div>
+      </div>
+      <div>
+        <div style="font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px;">Syllabus Status</div>
+        <span class="badge status-{{ today_log.syllabus_status }}">
+          {{ today_log.SYLLABUS_STATUS_LABELS.get(today_log.syllabus_status,'') }}
+        </span>
+      </div>
+      <div>
+        <div style="font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px;">Homework</div>
+        <div style="font-size:15px;font-weight:600;color:{% if today_log.homework_assigned %}#10b981{% else %}#94a3b8{% endif %};">
+          {{ '✓ Assigned' if today_log.homework_assigned else '— Not assigned' }}
+        </div>
+      </div>
+    </div>
+    {% if today_log.remarks %}
+    <div style="padding:0 24px 20px;">
+      <div style="font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px;">Remarks</div>
+      <div style="font-size:14px;color:#475569;background:#f8fafc;padding:10px 14px;border-radius:10px;">{{ today_log.remarks }}</div>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <!-- Recent Logs History -->
+  <div class="card">
+    <div class="card-header"><h2>📅 My Recent Logs</h2></div>
+    <div class="table-wrapper">
+      <table class="data-table">
+        <thead><tr><th>Date</th><th>Lesson Done</th><th>Topic</th><th>Status</th><th>Submitted</th></tr></thead>
+        <tbody>
+          {% for log in recent_logs %}
+          <tr>
+            <td style="font-weight:600;">{{ log.log_date.strftime('%d %b %Y') }}</td>
+            <td>{{ '✅' if log.lesson_completed else '❌' }}</td>
+            <td style="color:#64748b;">{{ log.syllabus_topic or '—' }}</td>
+            <td><span class="badge status-{{ log.syllabus_status }}">{{ log.SYLLABUS_STATUS_LABELS.get(log.syllabus_status,'') }}</span></td>
+            <td style="color:#94a3b8;font-size:13px;">{{ log.submitted_at.strftime('%H:%M') }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5" style="text-align:center;padding:24px;color:#94a3b8;">No logs yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {% endif %}
+</div>
+{% endblock %}

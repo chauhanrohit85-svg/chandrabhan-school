@@ -1,0 +1,182 @@
+{% extends "base.html" %}
+{% block title %}{{ student.full_name }} — Profile{% endblock %}
+{% block page_title %}Student Profile{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div style="max-width:1200px;margin:0 auto;">
+
+  <!-- Student Header -->
+  <div class="card" style="margin-bottom:24px;background:linear-gradient(135deg,#1e3a8a,#4f46e5);">
+    <div class="card-body" style="padding:28px 32px;display:flex;align-items:center;gap:24px;flex-wrap:wrap;">
+      <div style="width:72px;height:72px;border-radius:50%;background:rgba(255,255,255,0.15);display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:800;color:white;flex-shrink:0;border:3px solid rgba(255,255,255,0.3);">
+        {{ student.full_name[0].upper() }}
+      </div>
+      <div>
+        <h2 style="font-size:24px;color:white;margin:0 0 6px;">{{ student.full_name }}</h2>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;">
+          <span class="badge" style="background:rgba(255,255,255,0.15);color:white;font-size:13px;">Roll: {{ student.roll_number }}</span>
+          <span class="badge" style="background:rgba(255,255,255,0.15);color:white;font-size:13px;">{{ student.class_ref.display_name }}</span>
+          {% if student.parent_contact %}
+          <span class="badge" style="background:rgba(255,255,255,0.15);color:white;font-size:13px;">📞 {{ student.parent_contact }}</span>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Active Alerts -->
+  {% if active_alerts %}
+  <div style="margin-bottom:20px;">
+    {% for alert in active_alerts %}
+    <div style="background:#fff3cd;border:1px solid #ffc107;border-radius:12px;padding:14px 18px;display:flex;gap:12px;align-items:flex-start;margin-bottom:8px;">
+      <span style="font-size:18px;">⚠️</span>
+      <div style="flex:1;">
+        <div style="font-size:14px;color:#856404;font-weight:600;">{{ alert.message }}</div>
+        <div style="font-size:12px;color:#a07000;margin-top:4px;">{{ alert_labels.get(alert.alert_type,'') }} · {{ alert.created_at.strftime('%d %b %Y') }}</div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:24px;">
+
+    <!-- Radar Chart -->
+    <div class="card">
+      <div class="card-header"><h2>⭐ Current Week Pillar Scores</h2></div>
+      <div class="card-body" style="text-align:center;">
+        <canvas id="student-radar"
+                data-labels='{{ pillar_labels.values() | list | tojson }}'
+                data-values='{% set vals = [] %}{% for p in radar_data.values() %}{% set _ = vals.append(p) %}{% endfor %}{{ vals | tojson }}'
+                data-name="{{ student.full_name }}"
+                height="200"></canvas>
+      </div>
+    </div>
+
+    <!-- Attendance Summary -->
+    <div class="card">
+      <div class="card-header"><h2>✅ Attendance (Last 30 Days)</h2></div>
+      <div class="card-body">
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:20px;">
+          <div style="text-align:center;background:#d1fae5;border-radius:12px;padding:16px;">
+            <div style="font-size:28px;font-weight:800;color:#065f46;">{{ present_count }}</div>
+            <div style="font-size:12px;color:#047857;font-weight:600;margin-top:4px;">Present</div>
+          </div>
+          <div style="text-align:center;background:#fee2e2;border-radius:12px;padding:16px;">
+            <div style="font-size:28px;font-weight:800;color:#991b1b;">{{ absent_count }}</div>
+            <div style="font-size:12px;color:#dc2626;font-weight:600;margin-top:4px;">Absent</div>
+          </div>
+          <div style="text-align:center;background:#fef3c7;border-radius:12px;padding:16px;">
+            <div style="font-size:28px;font-weight:800;color:#92400e;">{{ late_count }}</div>
+            <div style="font-size:12px;color:#b45309;font-weight:600;margin-top:4px;">Late</div>
+          </div>
+        </div>
+        <!-- Attendance log -->
+        <div style="max-height:200px;overflow-y:auto;">
+          {% for rec in attendance_records[:14] %}
+          <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f1f5f9;font-size:13px;">
+            <span style="color:#475569;">{{ rec.log_date.strftime('%d %b %Y') }}</span>
+            <span class="badge {% if rec.status=='present' %}badge-success{% elif rec.status=='absent' %}badge-danger{% else %}badge-warning{% endif %}">
+              {{ rec.status.title() }}
+            </span>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Pillar Score History Table -->
+  <div class="card">
+    <div class="card-header">
+      <h2>📈 Pillar Score History (Last 8 Weeks)</h2>
+    </div>
+    <div class="table-wrapper">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Week</th>
+            {% for p, label in pillar_labels.items() %}
+            <th>{{ pillar_icons.get(p,'') }} {{ label }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for wk in weeks | reverse %}
+          <tr>
+            <td style="font-weight:600;color:#475569;">Wk {{ wk }}</td>
+            {% for pillar in pillar_labels.keys() %}
+            <td>
+              {% set scores_for_week = pillar_history.get(pillar, []) | selectattr('week_number','eq',wk) | list %}
+              {% if scores_for_week %}
+                {% set sc = scores_for_week[0] %}
+                <div style="display:flex;align-items:center;gap:6px;">
+                  <div class="pillar-dots">
+                    {% for i in range(1,6) %}
+                    <div class="pillar-dot {% if i <= sc.qualitative %}filled{% endif %}"></div>
+                    {% endfor %}
+                  </div>
+                  <span style="font-size:12px;color:#64748b;">{{ qualitative_labels.get(sc.qualitative,'') }}</span>
+                </div>
+                {% if sc.quantitative_score %}
+                <div style="font-size:11px;color:#94a3b8;margin-top:2px;">{{ sc.quantitative_score }}%</div>
+                {% endif %}
+              {% else %}
+                <span style="color:#e2e8f0;font-size:12px;">—</span>
+              {% endif %}
+            </td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(function() {
+  const canvas = document.getElementById('student-radar');
+  if (!canvas || typeof Chart === 'undefined') return;
+  const labels = JSON.parse(canvas.dataset.labels);
+  const values = JSON.parse(canvas.dataset.values);
+
+  new Chart(canvas, {
+    type: 'radar',
+    data: {
+      labels,
+      datasets: [{
+        label: canvas.dataset.name,
+        data: values,
+        backgroundColor: 'rgba(79,70,229,0.15)',
+        borderColor: 'rgba(79,70,229,0.9)',
+        borderWidth: 2.5,
+        pointBackgroundColor: '#6366f1',
+        pointRadius: 5,
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { labels: { font: { family:'Inter' }, color:'#475569' } } },
+      scales: {
+        r: {
+          beginAtZero: true, max: 5,
+          ticks: { stepSize:1, color:'#94a3b8', backdropColor:'transparent' },
+          grid: { color:'#f1f5f9' },
+          angleLines: { color:'#e2e8f0' },
+          pointLabels: { color:'#475569', font:{ size:12, family:'Inter', weight:'600' } }
+        }
+      }
+    }
+  });
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}TV Kiosk Views{% endblock %}
+{% block page_title %}Smart TV Display Links{% endblock %}
+
+{% block content %}
+<div style="max-width:800px;margin:0 auto;">
+  <div class="card">
+    <div class="card-header">
+      <h2>📺 TV Kiosk Views</h2>
+      <span style="font-size:13px;color:#64748b;">Open these links on classroom Smart TVs</span>
+    </div>
+    <div class="card-body" style="padding:0;">
+      {% for cls in classes %}
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 24px;border-bottom:1px solid #f1f5f9;{% if loop.last %}border:none;{% endif %}">
+        <div>
+          <div style="font-size:18px;font-weight:700;color:#1e293b;">{{ cls.display_name }}</div>
+          <div style="font-size:12px;color:#94a3b8;margin-top:2px;">{{ cls.students.count() }} students · {{ cls.academic_year }}</div>
+        </div>
+        <div style="display:flex;gap:10px;">
+          <a href="{{ url_for('tv.class_view', class_id=cls.id) }}" target="_blank"
+             class="btn btn-primary btn-sm">📺 Open TV View</a>
+          <button onclick="copyLink('{{ url_for('tv.class_view', class_id=cls.id, _external=True) }}')"
+                  class="btn btn-outline btn-sm">📋 Copy URL</button>
+        </div>
+      </div>
+      {% else %}
+      <div style="padding:48px;text-align:center;color:#94a3b8;">
+        No classes found. <a href="{{ url_for('admin.classes') }}">Create classes first →</a>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function copyLink(url) {
+  navigator.clipboard.writeText(url).then(() => {
+    alert('TV link copied to clipboard!');
+  });
+}
+</script>
+{% endblock %}

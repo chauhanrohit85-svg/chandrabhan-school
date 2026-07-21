@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}Alerts{% endblock %}
+{% block page_title %}Student Alerts & Flags{% endblock %}
+
+{% block content %}
+<div style="max-width:1100px;margin:0 auto;">
+
+  <!-- Filter tabs -->
+  <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap;">
+    {% for ftype, flabel in [('all','All'), ('below_threshold','Below Threshold'), ('absent_streak','Absence Streaks'), ('consistent_decline','Consistent Decline')] %}
+    <a href="{{ url_for('admin.alerts', type=ftype) }}"
+       class="btn {% if filter_type == ftype %}btn-primary{% else %}btn-outline{% endif %} btn-sm">
+       {{ flabel }}
+    </a>
+    {% endfor %}
+  </div>
+
+  <!-- Active Alerts -->
+  <div class="card" style="margin-bottom:28px;">
+    <div class="card-header" style="background:linear-gradient(90deg,#fff5f5,white);">
+      <h2 style="color:#991b1b;">🚨 Active Alerts ({{ active_alerts|length }})</h2>
+    </div>
+
+    {% if active_alerts %}
+    <div>
+      {% for alert in active_alerts %}
+      {% set colors = {'below_threshold': ('#fef3c7','#92400e','⚠️'), 'consistent_decline': ('#fee2e2','#991b1b','📉'), 'absent_streak': ('#fff7ed','#c2410c','🏃')} %}
+      {% set bg, fg, icon = colors.get(alert.alert_type, ('#f8fafc','#475569','ℹ️')) %}
+      <div style="display:flex;align-items:flex-start;gap:16px;padding:18px 24px;border-bottom:1px solid #f1f5f9;background:{{ bg }}08;{% if loop.last %}border:none;{% endif %}">
+        <div style="font-size:24px;flex-shrink:0;margin-top:2px;">{{ icon }}</div>
+        <div style="flex:1;">
+          <div style="font-size:15px;font-weight:600;color:#1e293b;margin-bottom:4px;">{{ alert.message }}</div>
+          <div style="display:flex;align-items:center;gap:10px;margin-top:6px;flex-wrap:wrap;">
+            <span class="badge badge-warning">{{ alert_type_labels.get(alert.alert_type, alert.alert_type) }}</span>
+            {% if alert.pillar %}<span class="badge badge-purple">{{ alert.pillar.replace('_',' ').title() }}</span>{% endif %}
+            <span style="font-size:12px;color:#94a3b8;">{{ alert.created_at.strftime('%d %b %Y, %H:%M') }}</span>
+            <a href="{{ url_for('admin.student_profile', student_id=alert.student_id) }}"
+               class="btn btn-outline btn-sm" style="font-size:12px;">View Student →</a>
+          </div>
+        </div>
+        <form action="{{ url_for('admin.resolve_alert', alert_id=alert.id) }}" method="POST">
+          <button type="submit" class="btn btn-success btn-sm">✓ Resolve</button>
+        </form>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="card-body" style="text-align:center;padding:48px;">
+      <div style="font-size:48px;margin-bottom:16px;">🎉</div>
+      <div style="font-size:20px;font-weight:700;color:#10b981;margin-bottom:8px;">No Active Alerts!</div>
+      <div style="color:#64748b;">All students are on track.</div>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Resolved Alerts -->
+  {% if resolved_alerts %}
+  <div class="card">
+    <div class="card-header">
+      <h2 style="color:#64748b;">✅ Recently Resolved (last 20)</h2>
+    </div>
+    <div class="table-wrapper">
+      <table class="data-table">
+        <thead>
+          <tr><th>Message</th><th>Type</th><th>Date Flagged</th></tr>
+        </thead>
+        <tbody>
+          {% for alert in resolved_alerts %}
+          <tr style="opacity:0.6;">
+            <td style="font-size:13px;">{{ alert.message }}</td>
+            <td><span class="badge badge-info">{{ alert_type_labels.get(alert.alert_type, alert.alert_type) }}</span></td>
+            <td style="color:#94a3b8;font-size:13px;">{{ alert.created_at.strftime('%d %b %Y') }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

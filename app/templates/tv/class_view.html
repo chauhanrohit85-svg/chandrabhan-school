@@ -1,0 +1,97 @@
+{% extends "base_tv.html" %}
+{% block title %}{{ cls.display_name }} — TV View{% endblock %}
+{% block class_badge %}{{ cls.display_name }}{% endblock %}
+
+{% block content %}
+
+  <!-- ── KPI Row ── -->
+  <div class="tv-kpi-grid">
+    <div class="tv-kpi tv-kpi-green">
+      <div class="tv-kpi-value">{{ present }}</div>
+      <div class="tv-kpi-label">Present Today</div>
+    </div>
+    <div class="tv-kpi tv-kpi-red">
+      <div class="tv-kpi-value">{{ absent }}</div>
+      <div class="tv-kpi-label">Absent</div>
+    </div>
+    <div class="tv-kpi tv-kpi-amber">
+      <div class="tv-kpi-value">{{ late }}</div>
+      <div class="tv-kpi-label">Late Arrivals</div>
+    </div>
+    <div class="tv-kpi tv-kpi-indigo">
+      <div class="tv-kpi-value">{{ total }}</div>
+      <div class="tv-kpi-label">Total Students</div>
+    </div>
+  </div>
+
+  <!-- ── Alerts ── -->
+  {% if alerts %}
+  <div class="tv-alerts">
+    🚨 <strong>{{ alerts|length }} active alert{{ 's' if alerts|length > 1 else '' }}:</strong>
+    {% for alert in alerts[:3] %}{{ alert.message }}{% if not loop.last %} · {% endif %}{% endfor %}
+  </div>
+  {% endif %}
+
+  <!-- ── Charts + Student List ── -->
+  <div class="tv-charts">
+
+    <!-- Pillar Radar Chart with Subject Overlay toggle -->
+    <div class="tv-card">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
+        <div class="tv-card-title" style="margin:0;">⭐ Pillar Performance</div>
+        
+        <!-- Subject Overlay Selector -->
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span style="font-size:13px; font-weight:700; color:#94a3b8; text-transform:uppercase; letter-spacing:0.04em;">Subject:</span>
+          <select id="tv-subject-select" style="background:#1e293b; color:#f8fafc; border:1px solid #475569; border-radius:6px; font-size:13px; padding:4px 8px; font-weight:600; cursor:pointer; outline:none;">
+            <option value="All">All Subjects (Class Average)</option>
+            {% for subj in subjects %}
+            <option value="{{ subj }}">{{ subj }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <canvas id="pillar-radar-chart"
+              data-labels='{{ pillar_labels.values() | list | tojson }}'
+              data-values='{{ pillar_avgs.values() | list | tojson }}'
+              data-class-label="{{ cls.display_name }}"
+              data-subject-radar='{{ subject_radar_data | tojson }}'
+              height="260"></canvas>
+    </div>
+
+    <!-- Student Attendance List with Edited Badges -->
+    <div class="tv-card">
+      <div class="tv-card-title">📋 Today's Attendance Roll</div>
+      <div style="max-height:350px;overflow-y:auto;padding-right:4px;">
+        {% for student in students %}
+        {% set status = attendance_map.get(student.id, 'unknown') %}
+        {% set details = attendance_details.get(student.id) %}
+        <div class="tv-student-row">
+          <span>
+            <span style="color:rgba(148,163,184,0.5);margin-right:10px;font-size:0.85em;">{{ student.roll_number }}</span>
+            {{ student.full_name }}
+            {% if details and details.is_edited %}
+            <span style="font-size:10px; background:#d97706; color:#ffffff; padding:1px 5px; border-radius:4px; font-weight:700; margin-left:6px; text-transform:uppercase; letter-spacing:0.04em;">
+              ✏️ Edited
+            </span>
+            {% endif %}
+          </span>
+          <span class="tv-status-{{ status }}">
+            {% if status == 'present' %}✓ Present
+            {% elif status == 'absent' %}✗ Absent
+            {% elif status == 'late' %}⚡ Late
+            {% else %}<span class="tv-status-unknown">— Not marked</span>{% endif %}
+          </span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+  </div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='js/tv.js') }}"></script>
+{% endblock %}

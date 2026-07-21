@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block title %}Edit User{% endblock %}
+{% block page_title %}Edit Teacher Account{% endblock %}
+
+{% block content %}
+<div style="max-width:600px;margin:0 auto;display:flex;flex-direction:column;gap:24px;">
+
+  <!-- Main Edit Form -->
+  <div class="card">
+    <div class="card-header">
+      <h2>✏️ Edit User Profile: {{ user.full_name }}</h2>
+      <a href="{{ url_for('admin.users') }}" class="btn btn-outline btn-sm">← Back</a>
+    </div>
+    <div class="card-body">
+      <form method="POST" action="{{ url_for('admin.edit_user', user_id=user.id) }}">
+        <div class="form-group">
+          <label class="form-label">Full Name</label>
+          <input type="text" name="full_name" class="form-control" value="{{ user.full_name }}" required />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Username (cannot change)</label>
+          <input type="text" class="form-control" value="{{ user.username }}" disabled style="opacity:0.6;" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Role</label>
+          <select name="role" class="form-control form-select">
+            <option value="teacher" {% if user.role=='teacher' %}selected{% endif %}>Teacher</option>
+            <option value="admin" {% if user.role=='admin' %}selected{% endif %}>Admin</option>
+            <option value="tv" {% if user.role=='tv' %}selected{% endif %}>TV Display</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Assign Primary Class (Class 3 & below fallback)</label>
+          <select name="assigned_class_id" class="form-control form-select">
+            <option value="">— No class —</option>
+            {% for cls in classes %}
+            <option value="{{ cls.id }}" {% if user.assigned_class_id == cls.id %}selected{% endif %}>
+              {{ cls.display_name }}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">New Password (leave blank to keep current)</label>
+          <input type="password" name="new_password" class="form-control" placeholder="New password…" />
+        </div>
+        <label class="form-check" style="margin-bottom:24px;">
+          <input type="checkbox" name="is_active" {% if user.is_active %}checked{% endif %} />
+          <span style="font-weight:600;color:#475569;">Account is Active</span>
+        </label>
+        <button type="submit" class="btn btn-primary" style="width:100%;">Save Changes</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Class-Subject Mapping (for Class 4th & above / Subject Teachers) -->
+  {% if user.role == 'teacher' %}
+  <div class="card">
+    <div class="card-header">
+      <h2>📚 Class-Subject Mapping (Class 4th & Above)</h2>
+    </div>
+    <div class="card-body">
+      {% if user.class_subjects.count() > 0 %}
+      <div class="table-wrapper" style="margin-bottom:20px;">
+        <table class="data-table" style="width:100%;">
+          <thead>
+            <tr>
+              <th>Class</th>
+              <th>Subject</th>
+              <th style="text-align:right;">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for m in user.class_subjects.all() %}
+            <tr>
+              <td style="font-weight:600;">{{ m.class_ref.display_name }}</td>
+              <td><span class="badge badge-purple">{{ m.subject }}</span></td>
+              <td style="text-align:right;">
+                <form method="POST" action="{{ url_for('admin.delete_user_mapping', mapping_id=m.id) }}" style="display:inline;" onsubmit="return confirm('Remove this mapping?');">
+                  <button type="submit" class="btn btn-sm btn-danger" style="padding:4px 8px; font-size:12px; min-height:28px;">Delete</button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div style="text-align:center; padding:20px; color:#64748b; background:#f8fafc; border-radius:10px; margin-bottom:20px; border:1px solid #e2e8f0;">
+        No specific mappings configured. Teacher will use primary class fallback.
+      </div>
+      {% endif %}
+
+      <form method="POST" action="{{ url_for('admin.add_user_mapping', user_id=user.id) }}" style="background:#f8fafc; padding:16px; border-radius:10px; border:1px solid #e2e8f0;">
+        <h3 style="margin-top:0; font-size:15px; color:#1e293b;">➕ Add Class-Subject Mapping</h3>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px;">
+          <div>
+            <label class="form-label" style="font-size:12px; margin-bottom:4px;">Class</label>
+            <select name="class_id" class="form-control form-select" required style="font-size:13px; min-height:36px; padding:6px 10px; background:white;">
+              <option value="">— Select class —</option>
+              {% for cls in classes %}
+              <option value="{{ cls.id }}">{{ cls.display_name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label class="form-label" style="font-size:12px; margin-bottom:4px;">Subject</label>
+            <input type="text" name="subject" class="form-control" placeholder="e.g. English" required style="font-size:13px; min-height:36px; padding:6px 10px; background:white;" />
+          </div>
+        </div>
+        <button type="submit" class="btn btn-outline" style="width:100%; min-height:38px; font-size:13px;">+ Add Mapping</button>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

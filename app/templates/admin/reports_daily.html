@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+{% block title %}Daily Report{% endblock %}
+{% block page_title %}Daily Teacher Report{% endblock %}
+
+{% block content %}
+<div style="max-width:1200px;margin:0 auto;">
+
+  <!-- Date Filter -->
+  <div class="card" style="margin-bottom:24px;">
+    <div class="card-body" style="padding:20px 24px;">
+      <form method="GET" style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+        <label for="date-pick" style="font-weight:700;color:#475569;font-size:14px;">📅 Select Date:</label>
+        <input type="date" id="date-pick" name="date"
+               value="{{ selected_date }}"
+               max="{{ today }}"
+               class="form-control" style="width:200px;" />
+        <button type="submit" class="btn btn-primary">View Report</button>
+        <a href="{{ url_for('admin.reports_daily', date=today) }}" class="btn btn-outline">Today</a>
+      </form>
+    </div>
+  </div>
+
+  <!-- Summary Badges -->
+  <div style="display:flex;gap:16px;margin-bottom:20px;flex-wrap:wrap;">
+    <div style="background:#d1fae5;border-radius:12px;padding:12px 20px;display:flex;align-items:center;gap:10px;">
+      <span style="font-size:20px;">✅</span>
+      <div>
+        <div style="font-size:22px;font-weight:800;color:#065f46;line-height:1;">{{ logs|length }}</div>
+        <div style="font-size:12px;color:#047857;font-weight:600;">Submitted</div>
+      </div>
+    </div>
+    <div style="background:#fee2e2;border-radius:12px;padding:12px 20px;display:flex;align-items:center;gap:10px;">
+      <span style="font-size:20px;">⏳</span>
+      <div>
+        <div style="font-size:22px;font-weight:800;color:#991b1b;line-height:1;">{{ missing|length }}</div>
+        <div style="font-size:12px;color:#dc2626;font-weight:600;">Not Submitted</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Submitted Logs Table -->
+  {% if logs %}
+  <div class="card" style="margin-bottom:24px;">
+    <div class="card-header">
+      <h2>✅ Submitted Logs — {{ selected_date.strftime('%A, %d %B %Y') }}</h2>
+    </div>
+    <div class="table-wrapper">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>#</th><th>Teacher</th><th>Class</th><th>Subject</th><th>Lesson Done</th>
+            <th>Topic Covered</th><th>Syllabus Pace</th><th>HW Given</th><th>Remarks</th><th>Photo</th><th>Time</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for log, user, cls, subj, pace in logs %}
+          <tr>
+            <td style="color:#94a3b8;">{{ loop.index }}</td>
+            <td style="font-weight:600;">{{ user.full_name }}</td>
+            <td><span class="badge badge-info">{{ cls.display_name }}</span></td>
+            <td><span class="badge badge-purple">{{ subj }}</span></td>
+            <td>
+              {% if log.lesson_completed %}
+                <span style="color:#10b981;font-size:18px;font-weight:bold;">✓</span>
+              {% else %}
+                <span style="color:#ef4444;font-size:18px;font-weight:bold;">✗</span>
+              {% endif %}
+            </td>
+            <td style="max-width:180px;word-break:break-word;">
+              {{ log.syllabus_topic or '—' }}
+            </td>
+            <td style="min-width:160px;">
+              {% if pace %}
+              <div style="font-size:11px; font-weight:700; color:#475569; display:flex; justify-content:space-between; margin-bottom:2px;">
+                <span>Covered: {{ pace.percent_covered }}%</span>
+                <span style="color:{% if pace.status == 'delayed' %}#ef4444{% elif pace.status == 'ahead' %}#2563eb{% else %}#16a34a{% endif %};">{{ pace.status_label }}</span>
+              </div>
+              <div class="progress-bar-wrap" style="height:6px; background:#e2e8f0; border-radius:3px; overflow:hidden;">
+                <div style="width:{{ pace.percent_covered }}%; height:100%; background:{% if pace.status == 'delayed' %}#f43f5e{% else %}#10b981{% endif %}; border-radius:3px;"></div>
+              </div>
+              {% else %}
+              —
+              {% endif %}
+            </td>
+            <td>
+              <span class="badge status-{{ log.syllabus_status }}">
+                {{ status_labels.get(log.syllabus_status, log.syllabus_status) }}
+              </span>
+            </td>
+            <td>
+              {% if log.homework_assigned %}
+                <span style="color:#10b981;">✓</span>
+              {% else %}
+                <span style="color:#94a3b8;">—</span>
+              {% endif %}
+            </td>
+            <td style="font-size:12px;max-width:140px;word-break:break-word;color:#475569;">
+              {{ log.remarks or '—' }}
+            </td>
+            <td>
+              {% if log.photo_base64 %}
+              <a href="#" onclick="showPhotoModal('{{ log.photo_base64 }}')" style="font-size:12px; color:#4f46e5; text-decoration:underline; font-weight:600; white-space:nowrap;">View Photo</a>
+              {% else %}
+              <span style="color:#cbd5e1;">—</span>
+              {% endif %}
+            </td>
+            <td style="color:#64748b;font-size:13px;white-space:nowrap;">
+              {{ log.submitted_at.strftime('%H:%M') }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Missing Submissions -->
+  {% if missing %}
+  <div class="card">
+    <div class="card-header" style="background:#fff5f5;border-bottom:1px solid #fee2e2;">
+      <h2 style="color:#991b1b;">⏳ Teachers Who Have Not Submitted</h2>
+    </div>
+    <div class="table-wrapper">
+      <table class="data-table">
+        <thead>
+          <tr><th>#</th><th>Teacher Name</th><th>Class Context</th><th>Subject Period</th><th>Expected Username</th></tr>
+        </thead>
+        <tbody>
+          {% for teacher, cls, subj in missing %}
+          <tr>
+            <td style="color:#94a3b8;">{{ loop.index }}</td>
+            <td style="font-weight:600;color:#991b1b;">{{ teacher.full_name }}</td>
+            <td><span class="badge badge-info">{{ cls.display_name }}</span></td>
+            <td><span class="badge badge-purple">{{ subj }}</span></td>
+            <td style="color:#64748b;">{{ teacher.username }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% elif not logs %}
+  <div class="card">
+    <div class="card-body" style="text-align:center;padding:48px;">
+      <div style="font-size:48px;margin-bottom:12px;">📭</div>
+      <div style="font-size:18px;font-weight:700;color:#475569;">No logs for this date.</div>
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+
+<!-- Photo Preview Modal -->
+<div id="photo-modal" style="display:none; position:fixed; z-index:1000; left:0; top:0; width:100%; height:100%; overflow:auto; background-color:rgba(0,0,0,0.8); align-items:center; justify-content:center;">
+  <div style="position:relative; background:#fff; padding:10px; border-radius:12px; max-width:90%; max-height:90%; display:flex; flex-direction:column; box-shadow:0 10px 25px rgba(0,0,0,0.3);">
+    <span onclick="closePhotoModal()" style="position:absolute; right:12px; top:6px; color:#334155; font-size:28px; font-weight:bold; cursor:pointer; z-index:10;">&times;</span>
+    <img id="modal-img" src="" style="max-width:100%; max-height:80vh; object-fit:contain; border-radius:6px;" />
+  </div>
+</div>
+
+<script>
+function showPhotoModal(src) {
+  document.getElementById('modal-img').src = src;
+  document.getElementById('photo-modal').style.display = 'flex';
+}
+function closePhotoModal() {
+  document.getElementById('photo-modal').style.display = 'none';
+}
+// Close modal on escape
+window.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') closePhotoModal();
+});
+</script>
+{% endblock %}

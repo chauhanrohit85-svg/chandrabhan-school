@@ -1,0 +1,222 @@
+{% extends "base.html" %}
+{% block title %}Daily Log{% endblock %}
+{% block page_title %}Daily Log — {{ today.strftime('%d %b %Y') }}{% endblock %}
+
+{% block content %}
+<div style="max-width:720px;margin:0 auto;">
+
+  <!-- Autosave indicator -->
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+    <div>
+      <span class="badge badge-info">{{ cls.display_name }}</span>
+      <span class="badge badge-purple" style="margin-left:6px;">{{ subject }}</span>
+      <span style="font-size:13px;color:#64748b;margin-left:8px;">{{ today.strftime('%A, %d %B %Y') }}</span>
+    </div>
+    <div id="autosave-indicator" class="autosave-indicator">
+      <div class="autosave-dot"></div>
+      <span class="autosave-text">Draft saves automatically</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <h2>📝 {{ 'Update' if log else 'Submit' }} Log for {{ subject }}</h2>
+      {% if log %}
+      <span class="badge badge-success">✓ Already submitted at {{ log.submitted_at.strftime('%H:%M') }}</span>
+      {% endif %}
+    </div>
+    <div class="card-body">
+      <form method="POST" action="{{ url_for('teacher.daily_log') }}"
+            id="daily-log-form" data-autosave>
+
+        <!-- Lesson Completed -->
+        <div class="form-group">
+          <label class="form-check" for="lesson-check" style="cursor:pointer;">
+            <input type="checkbox" id="lesson-check" name="lesson_completed"
+                   {% if log and log.lesson_completed %}checked{% endif %}
+                   style="width:22px;height:22px;accent-color:#4f46e5;" />
+            <div>
+              <span style="font-weight:700;color:#1e293b;font-size:15px;">Lesson Completed</span>
+              <div style="font-size:13px;color:#64748b;margin-top:2px;">Check if today's planned lesson was covered</div>
+            </div>
+          </label>
+        </div>
+
+        <!-- Syllabus Topic -->
+        <div class="form-group">
+          <label class="form-label" for="syllabus-topic">Topic / Chapter Covered</label>
+          
+          <!-- Click-First Status Pills -->
+          <div style="margin-bottom:10px; display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
+            <span style="font-size:12px; font-weight:700; color:#64748b; text-transform:uppercase; letter-spacing:0.04em;">Quick Status:</span>
+            {% for opt in ['Concept Taught', 'Revision Done', 'Class Test Taken', 'Doubt Session', 'Syllabus Delayed'] %}
+            <button type="button" class="btn btn-sm btn-outline text-indigo-600 border-indigo-200 hover:bg-indigo-50" 
+                    style="font-size:12px; padding:4px 10px; min-height:28px;"
+                    onclick="selectStatusPill('{{ opt }}')">
+              + {{ opt }}
+            </button>
+            {% endfor %}
+          </div>
+
+          <input type="text" id="syllabus-topic" name="syllabus_topic"
+                 class="form-control"
+                 value="{{ log.syllabus_topic if log else '' }}"
+                 placeholder="e.g. Chapter 5: Fractions — Addition and Subtraction"
+                 maxlength="200" />
+        </div>
+
+        <!-- Syllabus Status -->
+        <div class="form-group">
+          <label class="form-label" for="syllabus-status">Syllabus Progress Status</label>
+          <select id="syllabus-status" name="syllabus_status" class="form-control form-select">
+            {% for key, label in syllabus_statuses.items() %}
+            <option value="{{ key }}"
+              {% if log and log.syllabus_status == key %}selected
+              {% elif not log and key == 'on_track' %}selected
+              {% endif %}>
+              {% if key == 'on_track' %}✅ {% elif key == 'delayed' %}⚠️ {% else %}🚀 {% endif %}{{ label }}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <!-- Homework Assigned -->
+        <div class="form-group">
+          <label class="form-check" for="hw-check" style="cursor:pointer;">
+            <input type="checkbox" id="hw-check" name="homework_assigned"
+                   {% if log and log.homework_assigned %}checked{% endif %}
+                   style="width:22px;height:22px;accent-color:#4f46e5;" />
+            <div>
+              <span style="font-weight:700;color:#1e293b;font-size:15px;">Homework Assigned</span>
+              <div style="font-size:13px;color:#64748b;margin-top:2px;">Check if homework was given to students today</div>
+            </div>
+          </label>
+        </div>
+
+        <!-- Media Attachment -->
+        <div class="form-group" style="background:#f8fafc; padding:16px; border-radius:12px; border:2px dashed #cbd5e1;">
+          <label class="form-label" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <span style="display:flex; align-items:center; gap:6px; font-weight:700; color:#334155;">📸 Blackboard / Worksheet Photo</span>
+            <span style="font-size:11px; color:#64748b; font-weight:500; background:#e2e8f0; padding:2px 8px; border-radius:12px;">Auto-Compressed &lt; 200KB</span>
+          </label>
+          
+          <!-- Hidden Base64 Field -->
+          <input type="hidden" id="photo-base64" name="photo_base64" value="{{ log.photo_base64 if log and log.photo_base64 else '' }}" />
+          
+          <div style="display:flex; align-items:center; gap:12px; margin-bottom:10px;">
+            <input type="file" id="photo-file" accept="image/*" class="form-control" style="flex:1; padding:6px;" />
+            <button type="button" id="clear-photo-btn" class="btn btn-sm btn-danger" 
+                    style="display:{% if log and log.photo_base64 %}block{% else %}none{% endif %}; min-height:36px; font-size:13px;" 
+                    onclick="clearPhoto()">
+              Clear
+            </button>
+          </div>
+
+          <!-- Compressed Image Preview Container -->
+          <div id="photo-preview-container" style="display:{% if log and log.photo_base64 %}block{% else %}none{% endif %}; margin-top:8px; position:relative;">
+            <img id="photo-preview" src="{{ log.photo_base64 if log and log.photo_base64 else '' }}" 
+                 style="max-height:160px; max-width:100%; border-radius:8px; border:2px solid #cbd5e1; object-fit:contain; background:#ffffff;" />
+          </div>
+        </div>
+
+        <!-- Remarks -->
+        <div class="form-group">
+          <label class="form-label" for="remarks">Remarks / Notes <span style="font-weight:400;color:#94a3b8;">(optional)</span></label>
+          <textarea id="remarks" name="remarks" class="form-control"
+                    rows="4"
+                    placeholder="Any additional notes, classroom incidents, or topics pending…">{{ log.remarks if log else '' }}</textarea>
+        </div>
+
+        <div style="display:flex;gap:12px;flex-wrap:wrap;">
+          <button type="submit" id="submit-btn" class="btn btn-primary btn-lg" style="flex:1;">
+            {{ '📝 Update Log' if log else '✅ Submit Daily Log' }}
+          </button>
+          <a href="{{ url_for('teacher.dashboard') }}" class="btn btn-outline btn-lg">Cancel</a>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Offline hint -->
+  <div style="margin-top:16px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:12px 16px;font-size:13px;color:#15803d;">
+    <strong>📶 Offline-safe:</strong> Your data is auto-saved locally every 3 seconds. Even if your connection drops, your log will sync when you're back online.
+  </div>
+
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+document.getElementById('submit-btn').addEventListener('click', function() {
+  this.textContent = 'Submitting…';
+  this.style.opacity = '0.7';
+});
+
+// Click-First status pill input populator
+function selectStatusPill(val) {
+  const topicInput = document.getElementById('syllabus-topic');
+  if (topicInput) {
+    const current = topicInput.value.trim();
+    if (current.includes(`[${val}]`)) return;
+    topicInput.value = `[${val}] ` + current;
+    // Trigger change event to save draft in localStorage
+    topicInput.dispatchEvent(new Event('change'));
+  }
+}
+
+// Client-side photo resizing & compression (JPEG 0.7 quality, max 1024px)
+document.getElementById('photo-file').addEventListener('change', function(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = function(event) {
+    const img = new Image();
+    img.onload = function() {
+      const canvas = document.createElement('canvas');
+      let width = img.width;
+      let height = img.height;
+      const MAX_DIM = 1024;
+
+      if (width > MAX_DIM || height > MAX_DIM) {
+        if (width > height) {
+          height = Math.round((height * MAX_DIM) / width);
+          width = MAX_DIM;
+        } else {
+          width = Math.round((width * MAX_DIM) / height);
+          height = MAX_DIM;
+        }
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, width, height);
+
+      // Compress to JPEG at 70% quality (under 200KB)
+      const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
+
+      document.getElementById('photo-base64').value = compressedBase64;
+      document.getElementById('photo-preview').src = compressedBase64;
+      document.getElementById('photo-preview-container').style.display = 'block';
+      document.getElementById('clear-photo-btn').style.display = 'block';
+
+      // Fire change event to ensure autosave includes image
+      document.getElementById('photo-base64').dispatchEvent(new Event('change'));
+      console.log(`[Photo Compression] Original: ${(file.size/1024).toFixed(1)}KB, Base64: ${(compressedBase64.length/1024).toFixed(1)}KB`);
+    };
+    img.src = event.target.result;
+  };
+  reader.readAsDataURL(file);
+});
+
+function clearPhoto() {
+  document.getElementById('photo-file').value = '';
+  document.getElementById('photo-base64').value = '';
+  document.getElementById('photo-preview').src = '';
+  document.getElementById('photo-preview-container').style.display = 'none';
+  document.getElementById('clear-photo-btn').style.display = 'none';
+  document.getElementById('photo-base64').dispatchEvent(new Event('change'));
+}
+</script>
+{% endblock %}

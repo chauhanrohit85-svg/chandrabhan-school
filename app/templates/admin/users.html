@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}Teacher Accounts{% endblock %}
+{% block page_title %}Manage Teacher Accounts{% endblock %}
+
+{% block content %}
+<div style="max-width:1100px;margin:0 auto;">
+<div style="display:grid;grid-template-columns:1fr 360px;gap:24px;align-items:start;">
+
+  <!-- Teacher List -->
+  <div class="card">
+    <div class="card-header">
+      <h2>👨‍🏫 All Teachers ({{ teachers|length }})</h2>
+    </div>
+    <div class="table-wrapper">
+      <table class="data-table">
+        <thead>
+          <tr><th>#</th><th>Name</th><th>Username</th><th>Assigned Class</th><th>Status</th><th>Actions</th></tr>
+        </thead>
+        <tbody>
+          {% for t in teachers %}
+          <tr>
+            <td style="color:#94a3b8;">{{ loop.index }}</td>
+            <td>
+              <div style="display:flex;align-items:center;gap:10px;">
+                <div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#6366f1,#8b5cf6);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:white;flex-shrink:0;">
+                  {{ t.full_name[0].upper() }}
+                </div>
+                <div>
+                  <div style="font-weight:600;color:#1e293b;">{{ t.full_name }}</div>
+                  <div style="font-size:11px;color:#94a3b8;">{{ t.role }}</div>
+                </div>
+              </div>
+            </td>
+            <td><code style="font-size:13px;background:#f1f5f9;padding:3px 8px;border-radius:6px;">{{ t.username }}</code></td>
+            <td>
+              {% if t.assigned_class %}
+                <span class="badge badge-info">{{ t.assigned_class.display_name }}</span>
+              {% else %}
+                <span style="color:#94a3b8;">—</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if t.is_active %}
+                <span class="badge badge-success">Active</span>
+              {% else %}
+                <span class="badge badge-danger">Inactive</span>
+              {% endif %}
+            </td>
+            <td>
+              <div style="display:flex;gap:6px;">
+                <a href="{{ url_for('admin.edit_user', user_id=t.id) }}" class="btn btn-outline btn-sm">✏️ Edit</a>
+                <form action="{{ url_for('admin.toggle_user', user_id=t.id) }}" method="POST" style="display:inline;">
+                  <button type="submit" class="btn btn-sm" style="background:#f1f5f9;color:#475569;border:none;cursor:pointer;min-height:36px;">
+                    {{ '🚫 Deactivate' if t.is_active else '✅ Activate' }}
+                  </button>
+                </form>
+              </div>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6" style="text-align:center;padding:32px;color:#94a3b8;">No teachers found.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Add Teacher Form -->
+  <div class="card">
+    <div class="card-header">
+      <h2>➕ Add New Account</h2>
+    </div>
+    <div class="card-body">
+      <form method="POST" action="{{ url_for('admin.add_user') }}">
+        <div class="form-group">
+          <label class="form-label">Full Name</label>
+          <input type="text" name="full_name" class="form-control" placeholder="e.g. Mrs. Priya Sharma" required />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Username</label>
+          <input type="text" name="username" class="form-control" placeholder="e.g. priya_sharma" required />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Password</label>
+          <input type="password" name="password" class="form-control" placeholder="Set a secure password" required />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Role</label>
+          <select name="role" class="form-control form-select">
+            <option value="teacher">Teacher</option>
+            <option value="admin">Admin</option>
+            <option value="tv">TV Display (Kiosk)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Assign to Class</label>
+          <select name="assigned_class_id" class="form-control form-select">
+            <option value="">— No class —</option>
+            {% for cls in classes %}
+            <option value="{{ cls.id }}">{{ cls.display_name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%;">Create Account</button>
+      </form>
+    </div>
+  </div>
+
+</div>
+</div>
+{% endblock %}

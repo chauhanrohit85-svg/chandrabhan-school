@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en" data-tv-refresh="{{ refresh_seconds | default(300) }}">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=1920" />
+  <title>{% block title %}TV Display{% endblock %} | {{ school_name }}</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Poppins:wght@700;800;900&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+
+  <style>
+    :root {
+      --tv-scale: 1;
+      font-size: calc(18px * var(--tv-scale));
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: #030712;
+      color: #f1f5f9;
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    h1, h2, h3 { font-family: 'Poppins', 'Inter', sans-serif; line-height: 1.15; }
+
+    /* TV Header */
+    .tv-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 24px 48px;
+      background: linear-gradient(90deg, #0f172a 0%, #1e1b4b 60%, #312e81 100%);
+      border-bottom: 3px solid rgba(99,102,241,0.5);
+    }
+
+    .tv-school-name {
+      font-family: 'Poppins', sans-serif;
+      font-size: clamp(1.6rem, 3vw, 2.8rem);
+      font-weight: 900;
+      background: linear-gradient(135deg, #a5b4fc, #c4b5fd);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      letter-spacing: -0.01em;
+    }
+
+    .tv-class-badge {
+      font-size: clamp(1.2rem, 2.5vw, 2rem);
+      font-weight: 800;
+      color: #fbbf24;
+      background: rgba(251,191,36,0.1);
+      border: 2px solid rgba(251,191,36,0.3);
+      padding: 8px 24px;
+      border-radius: 999px;
+    }
+
+    .tv-time {
+      font-size: clamp(1rem, 2vw, 1.6rem);
+      color: #94a3b8;
+      font-weight: 600;
+    }
+
+    /* KPI Grid */
+    .tv-kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 24px;
+      padding: 32px 48px;
+    }
+
+    .tv-kpi {
+      background: rgba(255,255,255,0.04);
+      border: 2px solid rgba(255,255,255,0.08);
+      border-radius: 20px;
+      padding: 32px 24px;
+      text-align: center;
+      backdrop-filter: blur(10px);
+      transition: border-color 0.3s;
+    }
+    .tv-kpi:hover { border-color: rgba(99,102,241,0.4); }
+
+    .tv-kpi-value {
+      font-family: 'Poppins', sans-serif;
+      font-size: clamp(3rem, 6vw, 6rem);
+      font-weight: 900;
+      line-height: 1;
+      letter-spacing: -0.02em;
+    }
+
+    .tv-kpi-label {
+      font-size: clamp(0.9rem, 1.5vw, 1.3rem);
+      color: rgba(148,163,184,0.8);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      margin-top: 12px;
+    }
+
+    /* Colour variants */
+    .tv-kpi-green  .tv-kpi-value { color: #34d399; }
+    .tv-kpi-red    .tv-kpi-value { color: #f87171; }
+    .tv-kpi-amber  .tv-kpi-value { color: #fbbf24; }
+    .tv-kpi-indigo .tv-kpi-value { color: #a5b4fc; }
+
+    /* Charts section */
+    .tv-charts {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      padding: 0 48px 32px;
+    }
+
+    .tv-card {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 20px;
+      padding: 28px;
+    }
+
+    .tv-card-title {
+      font-family: 'Poppins', sans-serif;
+      font-size: clamp(1rem, 2vw, 1.5rem);
+      font-weight: 800;
+      color: #e2e8f0;
+      margin-bottom: 20px;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      padding-bottom: 12px;
+    }
+
+    /* Student attendance list */
+    .tv-student-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+      font-size: clamp(0.85rem, 1.4vw, 1.1rem);
+    }
+
+    .tv-status-present { color: #34d399; font-weight: 700; }
+    .tv-status-absent  { color: #f87171; font-weight: 700; }
+    .tv-status-late    { color: #fbbf24; font-weight: 700; }
+    .tv-status-unknown { color: #64748b; }
+
+    /* Alerts ticker */
+    .tv-alerts {
+      background: rgba(239,68,68,0.08);
+      border: 1px solid rgba(239,68,68,0.2);
+      border-radius: 12px;
+      padding: 12px 24px;
+      margin: 0 48px 24px;
+      font-size: clamp(0.85rem, 1.3vw, 1.1rem);
+      color: #fca5a5;
+    }
+
+    /* Footer bar */
+    .tv-footer {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      background: rgba(15,23,42,0.95);
+      border-top: 1px solid rgba(99,102,241,0.3);
+      padding: 12px 48px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: clamp(0.75rem, 1.2vw, 1rem);
+      color: #64748b;
+    }
+
+    .tv-refresh-bar {
+      height: 3px;
+      background: rgba(99,102,241,0.3);
+      position: fixed;
+      top: 0; left: 0;
+      animation: refreshCountdown linear;
+    }
+
+    @keyframes refreshCountdown {
+      from { width: 100%; }
+      to   { width: 0%; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Refresh progress bar -->
+  {% if refresh_seconds is defined %}
+  <div class="tv-refresh-bar"
+       style="animation-duration: {{ refresh_seconds }}s;"></div>
+  {% endif %}
+
+  <!-- Header -->
+  <header class="tv-header">
+    <div class="tv-school-name">🏫 {{ school_name }}</div>
+    <div class="tv-class-badge">{% block class_badge %}{% endblock %}</div>
+    <div class="tv-time">
+      <div id="tv-clock"></div>
+      <div style="font-size:0.7em;margin-top:4px;">Refresh in <span id="tv-refresh-counter">--</span></div>
+    </div>
+  </header>
+
+  {% block content %}{% endblock %}
+
+  <!-- Footer -->
+  <footer class="tv-footer">
+    <span>{{ school_name }} · Smart TV Display</span>
+    <span id="tv-date"></span>
+    <button id="tv-fullscreen-btn"
+            style="background:rgba(99,102,241,0.2);border:1px solid rgba(99,102,241,0.4);color:#a5b4fc;padding:6px 16px;border-radius:8px;cursor:pointer;font-size:inherit;">
+      ⛶ Fullscreen
+    </button>
+  </footer>
+
+  <script src="{{ url_for('static', filename='js/tv.js') }}"></script>
+  <script>
+    // Live clock
+    function updateClock() {
+      const now = new Date();
+      const pad = n => String(n).padStart(2, '0');
+      document.getElementById('tv-clock').textContent =
+        `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+      document.getElementById('tv-date').textContent =
+        now.toLocaleDateString('en-IN', {weekday:'long',day:'numeric',month:'long',year:'numeric'});
+    }
+    updateClock();
+    setInterval(updateClock, 1000);
+  </script>
+
+  {% block extra_scripts %}{% endblock %}
+</body>
+</html>

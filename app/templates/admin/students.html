@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}Students{% endblock %}
+{% block page_title %}Student Roster{% endblock %}
+
+{% block content %}
+<div style="max-width:1200px;margin:0 auto;">
+<div style="display:grid;grid-template-columns:1fr 340px;gap:24px;align-items:start;">
+
+  <!-- Student Table -->
+  <div class="card">
+    <div class="card-header">
+      <h2>🎒 Students ({{ students|length }})</h2>
+      <!-- Class filter -->
+      <form method="GET" style="display:flex;align-items:center;gap:8px;">
+        <select name="class_id" class="form-control form-select" style="width:160px;"
+                onchange="this.form.submit()">
+          <option value="">All Classes</option>
+          {% for cls in classes %}
+            <option value="{{ cls.id }}" {% if class_filter == cls.id %}selected{% endif %}>
+              {{ cls.display_name }}
+            </option>
+          {% endfor %}
+        </select>
+        <button type="submit" class="btn btn-outline btn-sm">Filter</button>
+      </form>
+    </div>
+    <div class="table-wrapper">
+      <table class="data-table">
+        <thead>
+          <tr><th>#</th><th>Roll</th><th>Name</th><th>Class</th><th>Parent Contact</th><th>Actions</th></tr>
+        </thead>
+        <tbody>
+          {% for s in students %}
+          <tr>
+            <td style="color:#94a3b8;">{{ loop.index }}</td>
+            <td><span class="badge badge-purple">{{ s.roll_number }}</span></td>
+            <td style="font-weight:600;color:#1e293b;">{{ s.full_name }}</td>
+            <td><span class="badge badge-info">{{ s.class_ref.display_name }}</span></td>
+            <td style="color:#64748b;font-size:13px;">{{ s.parent_contact or '—' }}</td>
+            <td>
+              <a href="{{ url_for('admin.student_profile', student_id=s.id) }}"
+                 class="btn btn-outline btn-sm">📊 Profile</a>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6" style="text-align:center;padding:32px;color:#94a3b8;">No students found.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Add Student Form -->
+  <div class="card">
+    <div class="card-header"><h2>➕ Add Student</h2></div>
+    <div class="card-body">
+      <form method="POST" action="{{ url_for('admin.add_student') }}">
+        <div class="form-group">
+          <label class="form-label">Roll Number</label>
+          <input type="text" name="roll_number" class="form-control" placeholder="e.g. 01" required />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Full Name</label>
+          <input type="text" name="full_name" class="form-control" placeholder="Student's full name" required />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Class</label>
+          <select name="class_id" class="form-control form-select" required>
+            <option value="">Select class…</option>
+            {% for cls in classes %}
+            <option value="{{ cls.id }}">{{ cls.display_name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Parent Contact (optional)</label>
+          <input type="tel" name="parent_contact" class="form-control" placeholder="+91 98765 43210" />
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%;">Add Student</button>
+      </form>
+    </div>
+  </div>
+
+</div>
+</div>
+{% endblock %}

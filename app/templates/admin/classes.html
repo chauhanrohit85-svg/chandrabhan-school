@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Manage Classes{% endblock %}
+{% block page_title %}Class Management{% endblock %}
+
+{% block content %}
+<div style="max-width:900px;margin:0 auto;">
+<div style="display:grid;grid-template-columns:1fr 300px;gap:24px;align-items:start;">
+
+  <div class="card">
+    <div class="card-header"><h2>🏛️ All Classes ({{ all_classes|length }})</h2></div>
+    <div class="table-wrapper">
+      <table class="data-table">
+        <thead><tr><th>#</th><th>Class</th><th>Year</th><th>Teacher</th><th>Students</th><th>TV View</th></tr></thead>
+        <tbody>
+          {% for cls in all_classes %}
+          <tr>
+            <td style="color:#94a3b8;">{{ loop.index }}</td>
+            <td style="font-weight:700;font-size:16px;color:#1e293b;">{{ cls.display_name }}</td>
+            <td><span class="badge badge-purple">{{ cls.academic_year }}</span></td>
+            <td>{{ cls.assigned_teacher.full_name if cls.assigned_teacher else '—' }}</td>
+            <td><span class="badge badge-info">{{ cls.students.count() }}</span></td>
+            <td>
+              <a href="{{ url_for('tv.class_view', class_id=cls.id) }}" target="_blank"
+                 class="btn btn-outline btn-sm">📺 TV View</a>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6" style="text-align:center;padding:32px;color:#94a3b8;">No classes yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h2>➕ Add Class</h2></div>
+    <div class="card-body">
+      <form method="POST" action="{{ url_for('admin.add_class') }}">
+        <div class="form-group">
+          <label class="form-label">Grade</label>
+          <select name="grade" class="form-control form-select">
+            {% for g in range(1,9) %}
+            <option value="{{ g }}">Class {{ g }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Section</label>
+          <select name="section" class="form-control form-select">
+            <option value="A">Section A</option>
+            <option value="B">Section B</option>
+            <option value="C">Section C</option>
+          </select>
+        </div>
+        <div style="background:#f8fafc;border-radius:10px;padding:12px;margin-bottom:20px;">
+          <div style="font-size:12px;color:#64748b;">Academic Year: <strong>{{ academic_year }}</strong></div>
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%;">Create Class</button>
+      </form>
+    </div>
+  </div>
+
+</div>
+</div>
+{% endblock %}
