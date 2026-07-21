@@ -24,13 +24,25 @@ from app.models import (User, Class, Student, TeacherDailyLog, AttendanceRecord,
                         PillarScore, AlertFlag, TeacherClassSubject)
 
 
-def seed():
-    app = create_app('development')
+def seed(app_instance=None):
+    if app_instance is None:
+        app = create_app('development')
+        drop_tables = True
+    else:
+        app = app_instance
+        drop_tables = False
+
     with app.app_context():
-        print("[*] Recreating all tables...")
-        db.drop_all()
+        if not drop_tables:
+            # Check if database is already seeded
+            if User.query.filter_by(username='principal').first():
+                return
+
+        print("[*] Recreating all tables..." if drop_tables else "[*] Initializing database...")
+        if drop_tables:
+            db.drop_all()
         db.create_all()
-        print("[OK] Tables recreated.")
+        print("[OK] Tables recreated." if drop_tables else "[OK] Tables created.")
 
         # ── Admin ──────────────────────────────────────────────────────────
         if not User.query.filter_by(username='principal').first():
