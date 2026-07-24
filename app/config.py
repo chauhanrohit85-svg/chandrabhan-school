@@ -18,31 +18,39 @@ class Config:
 
     @staticmethod
     def _db_uri():
-        """Auto-switch to PostgreSQL if DATABASE_URL is set (Render cloud)."""
+        """Auto-switch to PostgreSQL or custom SQLite path if configured (Render cloud)."""
         url = os.environ.get('DATABASE_URL')
-        if url and url.startswith('postgres://'):
-            # Render uses postgres://, SQLAlchemy needs postgresql://
-            url = url.replace('postgres://', 'postgresql://', 1)
-        return url or f"sqlite:///{BASE_DIR / 'instance' / 'school.db'}"
+        if url:
+            if url.startswith('postgres://'):
+                url = url.replace('postgres://', 'postgresql://', 1)
+            return url
+        sqlite_path = os.environ.get('SQLITE_DB_PATH')
+        if sqlite_path:
+            return f"sqlite:///{sqlite_path}"
+        return f"sqlite:///{BASE_DIR / 'instance' / 'school.db'}"
+
+
+def _get_engine_options(is_dev=False):
+    uri = Config._db_uri()
+    options = {'pool_pre_ping': True}
+    if uri.startswith('sqlite'):
+        options['connect_args'] = {'check_same_thread': False}
+    elif not is_dev:
+        options['pool_recycle'] = 300
+    return options
 
 
 class DevelopmentConfig(Config):
     DEBUG = True
     SQLALCHEMY_DATABASE_URI = Config._db_uri()
-    SQLALCHEMY_ENGINE_OPTIONS = {
-        'connect_args': {'check_same_thread': False},
-        'pool_pre_ping': True,
-    }
+    SQLALCHEMY_ENGINE_OPTIONS = _get_engine_options(is_dev=True)
 
 
 class ProductionConfig(Config):
     DEBUG = False
     WTF_CSRF_ENABLED = True
     SQLALCHEMY_DATABASE_URI = Config._db_uri()
-    SQLALCHEMY_ENGINE_OPTIONS = {
-        'pool_pre_ping': True,
-        'pool_recycle': 300,
-    }
+    SQLALCHEMY_ENGINE_OPTIONS = _get_engine_options(is_dev=False)
 
 
 class TestingConfig(Config):

@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}Annual Academic Session Promotion{% endblock %}
+{% block page_title %}Academic Session Promotion / Class Rollover{% endblock %}
+
+{% block content %}
+<div style="max-width:1100px;margin:0 auto;display:flex;flex-direction:column;gap:24px;">
+
+  <!-- Hero Header -->
+  <div class="card" style="border-top:4px solid #4f46e5; background:linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);">
+    <div class="card-header">
+      <h2>🎓 Annual Academic Session Bulk Promotion</h2>
+    </div>
+    <div class="card-body">
+      <p style="color:#475569; font-size:14px; margin-bottom:16px;">
+        Perform single-click class rollovers for the upcoming academic session. Active students in each class section will be automatically promoted to the next grade level (e.g. <strong>Nursery-A → LKG-A</strong>, <strong>Class 9-B → Class 10-B</strong>), while Class 10th students will be marked as <strong>Graduated</strong>.
+      </p>
+      
+      <form method="POST" action="{{ url_for('admin.execute_promotion') }}" onsubmit="return confirm('Are you sure you want to promote ALL active classes to the next academic session?');" style="display:flex; align-items:center; gap:16px; flex-wrap:wrap; background:#ede9fe; padding:16px; border-radius:10px;">
+        <div>
+          <label style="font-weight:700; color:#4c1d95; font-size:13px; display:block; margin-bottom:4px;">Target Academic Year:</label>
+          <input type="text" name="target_year" value="{{ target_year }}" class="form-control" style="width:160px; font-weight:700; text-align:center;" required />
+        </div>
+        <input type="hidden" name="class_id" value="all" />
+        <div style="flex:1;">
+          <div style="font-size:12px; color:#5b21b6; font-weight:600; margin-bottom:4px;">School-wide Action:</div>
+          <button type="submit" class="btn btn-primary" style="background:linear-gradient(90deg, #4f46e5, #7c3aed); border:none;">
+            🚀 Promote All School Class Sections in 1-Click
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Class-by-Class Promotion Table -->
+  <div class="card">
+    <div class="card-header">
+      <h2>🏫 Section-by-Section Rollover Control</h2>
+    </div>
+    <div class="table-wrapper">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Current Class</th>
+            <th>Section</th>
+            <th>Academic Session</th>
+            <th>Active Students</th>
+            <th>Target Promotion Grade</th>
+            <th style="text-align:right;">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for cls, next_label, student_count in class_promotions %}
+          <tr>
+            <td style="font-weight:700; color:#1e293b;">{{ cls.display_name }}</td>
+            <td><span class="badge badge-info">Sec {{ cls.section }}</span></td>
+            <td style="color:#64748b; font-size:13px;">{{ cls.academic_year }}</td>
+            <td>
+              <span class="badge {% if student_count > 0 %}badge-success{% else %}badge-warning{% endif %}">
+                {{ student_count }} Students
+              </span>
+            </td>
+            <td style="font-weight:700; color:#4f46e5;">
+              ➡️ {{ next_label }}
+            </td>
+            <td style="text-align:right;">
+              {% if student_count > 0 %}
+              <form method="POST" action="{{ url_for('admin.execute_promotion') }}" style="display:inline;" onsubmit="return confirm('Promote {{ cls.display_name }} to {{ next_label }}?');">
+                <input type="hidden" name="class_id" value="{{ cls.id }}" />
+                <input type="hidden" name="target_year" value="{{ target_year }}" />
+                <button type="submit" class="btn btn-sm btn-outline" style="font-size:12px; padding:4px 10px;">
+                  Promote {{ cls.display_name }}
+                </button>
+              </form>
+              {% else %}
+              <span style="color:#cbd5e1; font-size:12px;">No active students</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

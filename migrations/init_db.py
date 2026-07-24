@@ -51,19 +51,21 @@ def seed(app_instance=None):
             db.session.add(admin)
             print("[OK] Admin account created: principal / admin123")
 
-        # ── Classes ────────────────────────────────────────────────────────
+        # ── Classes (Nursery to Class 10, Sections A & B) ───────────────────
         academic_year = app.config['ACADEMIC_YEAR']
         classes = []
-        for grade in range(1, 9):
-            for section in ['A']:
-                cls = Class.query.filter_by(grade=grade, section=section,
-                                            academic_year=academic_year).first()
+        grades = [-3, -2, -1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        sections = ['A', 'B']
+
+        for g in grades:
+            for sec in sections:
+                cls = Class.query.filter_by(grade=g, section=sec, academic_year=academic_year).first()
                 if not cls:
-                    cls = Class(grade=grade, section=section, academic_year=academic_year)
+                    cls = Class(grade=g, section=sec, academic_year=academic_year)
                     db.session.add(cls)
                     db.session.flush()
                 classes.append(cls)
-        print(f"[OK] {len(classes)} classes ready.")
+        print(f"[OK] {len(classes)} classes ready (Nursery–Class 10th A/B).")
 
         # ── Teachers ───────────────────────────────────────────────────────
         teacher_data = [
@@ -77,10 +79,9 @@ def seed(app_instance=None):
         for i, (uname, fname, pw) in enumerate(teacher_data):
             t = User.query.filter_by(username=uname).first()
             if not t:
-                # Class 1-3 are primary, single class teachers
-                # Class 4 and 5 are multi-class subject teachers (teacher4 & teacher5)
-                t = User(username=uname, full_name=fname, role='teacher',
-                         assigned_class_id=classes[i].id if i < 3 else None)
+                # Assign primary class teachers to early grades (e.g. Nursery-A, LKG-A, Class 1-A)
+                assigned_c_id = classes[i].id if i < 3 else None
+                t = User(username=uname, full_name=fname, role='teacher', assigned_class_id=assigned_c_id)
                 t.set_password(pw)
                 db.session.add(t)
                 db.session.flush()
@@ -88,24 +89,26 @@ def seed(app_instance=None):
         print(f"[OK] {len(teachers)} teacher accounts ready.")
 
         # ── Multi-Class Mappings (For Class 4th & above / Subject Teachers) ──
-        # Mappings: Teacher -> Class -> Subject
+        # Find index for Class 4-A and 5-A in classes array
+        cls_4a = next((c for c in classes if c.grade == 4 and c.section == 'A'), classes[0])
+        cls_5a = next((c for c in classes if c.grade == 5 and c.section == 'A'), classes[1])
+
         mappings = [
-            # Teacher 1, 2, 3 (Primary, Grade 1, 2, 3) get 'General' mappings
             (teachers[0].id, classes[0].id, 'General'),
             (teachers[1].id, classes[1].id, 'General'),
             (teachers[2].id, classes[2].id, 'General'),
-            # Teacher 4: teaches English in Class 4-A and 5-A, and Reasoning in Class 4-A
-            (teachers[3].id, classes[3].id, 'English'),
-            (teachers[3].id, classes[4].id, 'English'),
-            (teachers[3].id, classes[3].id, 'Reasoning'),
-            # Teacher 5: teaches Mathematics in Class 4-A and Class 5-A, and Reasoning in Class 5-A
-            (teachers[4].id, classes[3].id, 'Mathematics'),
-            (teachers[4].id, classes[4].id, 'Mathematics'),
-            (teachers[4].id, classes[4].id, 'Reasoning'),
+            (teachers[3].id, cls_4a.id, 'English'),
+            (teachers[3].id, cls_5a.id, 'English'),
+            (teachers[3].id, cls_4a.id, 'Reasoning'),
+            (teachers[4].id, cls_4a.id, 'Mathematics'),
+            (teachers[4].id, cls_5a.id, 'Mathematics'),
+            (teachers[4].id, cls_5a.id, 'Reasoning'),
         ]
         for t_id, c_id, subj in mappings:
-            mapping = TeacherClassSubject(teacher_id=t_id, class_id=c_id, subject=subj)
-            db.session.add(mapping)
+            existing = TeacherClassSubject.query.filter_by(teacher_id=t_id, class_id=c_id, subject=subj).first()
+            if not existing:
+                mapping = TeacherClassSubject(teacher_id=t_id, class_id=c_id, subject=subj)
+                db.session.add(mapping)
         db.session.flush()
         print("[OK] Teacher Class-Subject mappings seeded.")
 

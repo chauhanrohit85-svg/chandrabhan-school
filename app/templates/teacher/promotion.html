@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Class Session Rollover — {{ cls.display_name }}{% endblock %}
+{% block page_title %}Class Session Promotion Rollover{% endblock %}
+
+{% block content %}
+<div style="max-width:800px; margin:0 auto;">
+  <div class="card" style="border-top:4px solid #4f46e5;">
+    <div class="card-header">
+      <h2>🎓 Annual Session Promotion — {{ cls.display_name }}</h2>
+    </div>
+    <div class="card-body">
+      <p style="color:#475569; font-size:14px; margin-bottom:20px;">
+        As the class teacher for <strong>{{ cls.display_name }}</strong>, you can promote your active student roster to the next academic session in a single click.
+      </p>
+
+      <div style="background:#f8fafc; padding:16px; border-radius:10px; border:1px solid #e2e8f0; margin-bottom:24px;">
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+          <div>
+            <div style="font-size:12px; color:#64748b; font-weight:700; text-transform:uppercase;">Current Class:</div>
+            <div style="font-size:18px; font-weight:800; color:#1e293b;">{{ cls.display_name }} ({{ cls.academic_year }})</div>
+          </div>
+          <div>
+            <div style="font-size:12px; color:#64748b; font-weight:700; text-transform:uppercase;">Promotion Target:</div>
+            <div style="font-size:18px; font-weight:800; color:#4f46e5;">➡️ {{ next_label }}</div>
+          </div>
+        </div>
+        <div style="margin-top:12px; font-size:13px; color:#10b981; font-weight:600;">
+          👥 Active Roster: {{ student_count }} Students Ready for Promotion
+        </div>
+      </div>
+
+      {% if student_count > 0 %}
+      <form method="POST" action="{{ url_for('teacher.execute_promotion') }}" onsubmit="return confirm('Promote {{ student_count }} students of {{ cls.display_name }} to {{ next_label }}?');">
+        <div class="form-group" style="margin-bottom:20px;">
+          <label class="form-label">Next Academic Year</label>
+          <input type="text" name="target_year" value="{{ target_year }}" class="form-control" style="width:200px; font-weight:700;" required />
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%; font-size:14px; padding:10px;">
+          🚀 Promote {{ cls.display_name }} Roster to {{ next_label }}
+        </button>
+      </form>
+      {% else %}
+      <div style="text-align:center; padding:24px; color:#94a3b8;">
+        No active students in {{ cls.display_name }} to promote.
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

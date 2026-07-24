@@ -69,7 +69,7 @@
             <span class="nav-icon">🏛️</span> Classes
           </a>
 
-          <div class="nav-section-title" style="margin-top:16px;">Reports</div>
+          <div class="nav-section-title" style="margin-top:16px;">Reports & Tools</div>
           <a href="{{ url_for('admin.reports_daily') }}"
              class="nav-link {% if request.endpoint == 'admin.reports_daily' %}active{% endif %}">
             <span class="nav-icon">📅</span> Daily Report
@@ -81,6 +81,10 @@
           <a href="{{ url_for('admin.reports_monthly') }}"
              class="nav-link {% if request.endpoint == 'admin.reports_monthly' %}active{% endif %}">
             <span class="nav-icon">📈</span> Monthly Report
+          </a>
+          <a href="{{ url_for('admin.promotion') }}"
+             class="nav-link {% if 'admin.promotion' in request.endpoint %}active{% endif %}">
+            <span class="nav-icon">🎓</span> Session Promotion
           </a>
 
           <div class="nav-section-title" style="margin-top:16px;">TV Display</div>
@@ -94,6 +98,10 @@
              class="nav-link {% if request.endpoint == 'teacher.dashboard' %}active{% endif %}">
             <span class="nav-icon">🏠</span> Dashboard
           </a>
+          <a href="{{ url_for('teacher.students') }}"
+             class="nav-link {% if 'teacher.student' in request.endpoint %}active{% endif %}">
+            <span class="nav-icon">🎒</span> Student Roster
+          </a>
           <a href="{{ url_for('teacher.daily_log') }}"
              class="nav-link {% if request.endpoint == 'teacher.daily_log' %}active{% endif %}">
             <span class="nav-icon">📝</span> Daily Log
@@ -105,6 +113,10 @@
           <a href="{{ url_for('teacher.pillars') }}"
              class="nav-link {% if 'teacher.pillar' in request.endpoint %}active{% endif %}">
             <span class="nav-icon">⭐</span> Pillar Scores
+          </a>
+          <a href="{{ url_for('teacher.promotion') }}"
+             class="nav-link {% if 'teacher.promotion' in request.endpoint %}active{% endif %}">
+            <span class="nav-icon">🎓</span> Session Rollover
           </a>
         {% endif %}
 

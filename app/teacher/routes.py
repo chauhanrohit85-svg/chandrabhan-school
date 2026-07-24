@@ -303,6 +303,102 @@ def attendance():
 
 
 # ---------------------------------------------------------------------------
+# Student Management (Teacher Direct Access)
+# ---------------------------------------------------------------------------
+@teacher_bp.route('/students')
+@login_required
+@teacher_required
+def students():
+    cls, subject, mappings = get_active_context()
+    if not cls:
+        flash('You are not assigned to any class context.', 'warning')
+        return redirect(url_for('teacher.dashboard'))
+
+    students_list = Student.query.filter_by(class_id=cls.id)\
+                                 .order_by(Student.roll_number).all()
+
+    return render_template('teacher/students.html',
+        cls=cls,
+        subject=subject,
+        students=students_list,
+        mappings=mappings,
+    )
+
+
+@teacher_bp.route('/students/add', methods=['POST'])
+@login_required
+@teacher_required
+def add_student():
+    cls, subject, mappings = get_active_context()
+    if not cls:
+        flash('No active class selected.', 'danger')
+        return redirect(url_for('teacher.dashboard'))
+
+    roll = request.form.get('roll_number', '').strip()
+    name = request.form.get('full_name', '').strip()
+    contact = request.form.get('parent_contact', '').strip()
+
+    if not roll or not name:
+        flash('Roll number and Student name are required.', 'warning')
+        return redirect(url_for('teacher.students'))
+
+    existing = Student.query.filter_by(roll_number=roll, class_id=cls.id).first()
+    if existing:
+        flash(f'Roll number {roll} already exists in {cls.display_name}.', 'warning')
+    else:
+        student = Student(roll_number=roll, full_name=name, class_id=cls.id, parent_contact=contact)
+        db.session.add(student)
+        db.session.commit()
+        flash(f'Student {name} added to {cls.display_name} successfully.', 'success')
+
+    return redirect(url_for('teacher.students'))
+
+
+@teacher_bp.route('/students/<int:student_id>/edit', methods=['GET', 'POST'])
+@login_required
+@teacher_required
+def edit_student(student_id):
+    student = Student.query.get_or_404(student_id)
+
+    # Ensure teacher has context permission for this student's class
+    allowed_class_ids = set()
+    if current_user.assigned_class_id:
+        allowed_class_ids.add(current_user.assigned_class_id)
+    for m in current_user.class_subjects:
+        allowed_class_ids.add(m.class_id)
+
+    if student.class_id not in allowed_class_ids:
+        flash('Permission denied. You can only edit students in your assigned classes.', 'danger')
+        return redirect(url_for('teacher.students'))
+
+    if request.method == 'POST':
+        roll = request.form.get('roll_number', '').strip()
+        name = request.form.get('full_name', '').strip()
+        contact = request.form.get('parent_contact', '').strip()
+        is_active = 1 if request.form.get('is_active') else 0
+
+        if not roll or not name:
+            flash('Roll number and full name are required.', 'warning')
+            return redirect(url_for('teacher.edit_student', student_id=student_id))
+
+        if roll != student.roll_number:
+            dupe = Student.query.filter_by(roll_number=roll, class_id=student.class_id).first()
+            if dupe:
+                flash(f'Roll number {roll} is already in use by another student.', 'warning')
+                return redirect(url_for('teacher.edit_student', student_id=student_id))
+
+        student.roll_number = roll
+        student.full_name = name
+        student.parent_contact = contact
+        student.is_active = is_active
+        db.session.commit()
+        flash(f'Student {name} updated successfully.', 'success')
+        return redirect(url_for('teacher.students'))
+
+    return render_template('teacher/edit_student.html', student=student, cls=student.class_ref)
+
+
+# ---------------------------------------------------------------------------
 # Pillar Score Entry
 # ---------------------------------------------------------------------------
 @teacher_bp.route('/pillars', methods=['GET'])
@@ -424,4 +520,61 @@ def pillar_entry():
     db.session.commit()
     flash(f'Pillar scores for {subject} saved for Week {current_week}!', 'success')
     return redirect(url_for('teacher.pillars'))
+
+
+# ---------------------------------------------------------------------------
+# Session Promotion (Teacher Rollover)
+# ---------------------------------------------------------------------------
+@teacher_bp.route('/promotion', methods=['GET'])
+@login_required
+@teacher_required
+def promotion():
+    cls, subject, mappings = get_active_context()
+    if not cls:
+        flash('No class assigned to promote.', 'warning')
+        return redirect(url_for('teacher.dashboard'))
+
+    try:
+        y1, y2 = cls.academic_year.split('-')
+        next_y1 = str(int(y1) + 1)
+        next_y2 = str(int(y2) + 1).zfill(2) if len(y2) == 2 else str(int(y2) + 1)
+        target_year = f"{next_y1}-{next_y2}"
+    except Exception:
+        target_year = "2026-27"
+
+    order = Class.GRADE_ORDER
+    if cls.grade in order:
+        idx = order.index(cls.grade)
+        if idx < len(order) - 1:
+            next_g = order[idx + 1]
+            next_label = f"{Class.GRADE_MAP.get(next_g, next_g)}-{cls.section} ({target_year})"
+        else:
+            next_label = "Graduated"
+    else:
+        next_label = "Unknown"
+
+    student_count = Student.query.filter_by(class_id=cls.id, is_active=1).count()
+
+    return render_template('teacher/promotion.html',
+        cls=cls,
+        next_label=next_label,
+        student_count=student_count,
+        target_year=target_year,
+    )
+
+
+@teacher_bp.route('/promotion/execute', methods=['POST'])
+@login_required
+@teacher_required
+def execute_promotion():
+    cls, subject, mappings = get_active_context()
+    if not cls:
+        return redirect(url_for('teacher.dashboard'))
+
+    target_year = request.form.get('target_year', '').strip() or '2026-27'
+    from app.admin.routes import _promote_single_class
+    cnt, next_name = _promote_single_class(cls, target_year)
+
+    flash(f'Promoted {cnt} students from {cls.display_name} to {next_name} for session {target_year}!', 'success')
+    return redirect(url_for('teacher.dashboard'))
 

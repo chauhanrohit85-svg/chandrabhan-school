@@ -79,9 +79,26 @@ class TeacherClassSubject(db.Model):
 class Class(db.Model):
     __tablename__ = 'classes'
 
+    GRADE_MAP = {
+        -3: 'Nursery',
+        -2: 'LKG',
+        -1: 'UKG',
+        1: 'Class 1',
+        2: 'Class 2',
+        3: 'Class 3',
+        4: 'Class 4',
+        5: 'Class 5',
+        6: 'Class 6',
+        7: 'Class 7',
+        8: 'Class 8',
+        9: 'Class 9',
+        10: 'Class 10',
+    }
+    GRADE_ORDER = [-3, -2, -1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+
     id = db.Column(db.Integer, primary_key=True)
-    grade = db.Column(db.Integer, nullable=False)             # 1–8
-    section = db.Column(db.String(5), nullable=False)         # A / B / C
+    grade = db.Column(db.Integer, nullable=False)             # -3 (Nursery) .. 10 (Class 10)
+    section = db.Column(db.String(5), nullable=False)         # A / B
     academic_year = db.Column(db.String(10), nullable=False)  # "2025-26"
 
     students = db.relationship('Student', backref='class_ref', lazy='dynamic')
@@ -94,10 +111,15 @@ class Class(db.Model):
 
     @property
     def display_name(self):
-        return f'Class {self.grade}-{self.section}'
+        name = self.GRADE_MAP.get(self.grade, f'Class {self.grade}')
+        return f'{name}-{self.section}'
+
+    @property
+    def is_primary(self):
+        return self.grade <= 3
 
     def __repr__(self):
-        return f'<Class {self.grade}-{self.section} ({self.academic_year})>'
+        return f'<Class {self.display_name} ({self.academic_year})>'
 
 
 # ---------------------------------------------------------------------------

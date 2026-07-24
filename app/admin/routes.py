@@ -638,11 +638,126 @@ def add_student():
     return redirect(url_for('admin.students'))
 
 
+def _promote_single_class(cls, target_year):
+    """
+    Helper function to promote a single class section to the next grade level.
+    Nursery (-3) -> LKG (-2) -> UKG (-1) -> Class 1 (1) -> ... -> Class 10 (10) -> Graduated
+    """
+    order = Class.GRADE_ORDER
+    if cls.grade in order:
+        idx = order.index(cls.grade)
+        if idx < len(order) - 1:
+            next_grade = order[idx + 1]
+        else:
+            next_grade = None  # Class 10th graduated
+    else:
+        next_grade = None
+
+    active_students = Student.query.filter_by(class_id=cls.id, is_active=1).all()
+    if not active_students:
+        return 0, "No Active Students"
+
+    if next_grade is None:
+        for s in active_students:
+            s.is_active = 0
+        db.session.commit()
+        return len(active_students), "Graduated"
+    else:
+        target_cls = Class.query.filter_by(
+            grade=next_grade,
+            section=cls.section,
+            academic_year=target_year
+        ).first()
+        if not target_cls:
+            target_cls = Class(
+                grade=next_grade,
+                section=cls.section,
+                academic_year=target_year
+            )
+            db.session.add(target_cls)
+            db.session.flush()
+
+        count = len(active_students)
+        for s in active_students:
+            s.class_id = target_cls.id
+        db.session.commit()
+        return count, target_cls.display_name
+
+
+@admin_bp.route('/promotion', methods=['GET'])
+@login_required
+@admin_required
+def promotion():
+    academic_year = current_app.config['ACADEMIC_YEAR']
+    try:
+        y1, y2 = academic_year.split('-')
+        next_y1 = str(int(y1) + 1)
+        next_y2 = str(int(y2) + 1).zfill(2) if len(y2) == 2 else str(int(y2) + 1)
+        target_year = f"{next_y1}-{next_y2}"
+    except Exception:
+        target_year = "2026-27"
+
+    all_classes = Class.query.filter_by(academic_year=academic_year)\
+                             .order_by(Class.grade, Class.section).all()
+
+    class_promotions = []
+    order = Class.GRADE_ORDER
+    for cls in all_classes:
+        student_cnt = Student.query.filter_by(class_id=cls.id, is_active=1).count()
+        if cls.grade in order:
+            idx = order.index(cls.grade)
+            if idx < len(order) - 1:
+                next_g = order[idx + 1]
+                next_label = f"{Class.GRADE_MAP.get(next_g, next_g)}-{cls.section} ({target_year})"
+            else:
+                next_label = "Graduated (Inactive)"
+        else:
+            next_label = "Unknown"
+        class_promotions.append((cls, next_label, student_cnt))
+
+    return render_template('admin/promotion.html',
+        target_year=target_year,
+        class_promotions=class_promotions,
+    )
+
+
+@admin_bp.route('/promotion/execute', methods=['POST'])
+@login_required
+@admin_required
+def execute_promotion():
+    target_year = request.form.get('target_year', '').strip() or '2026-27'
+    class_id_param = request.form.get('class_id', 'all')
+
+    academic_year = current_app.config['ACADEMIC_YEAR']
+
+    if class_id_param == 'all':
+        classes_to_promote = Class.query.filter_by(academic_year=academic_year).all()
+        total_students = 0
+        for cls in classes_to_promote:
+            cnt, _ = _promote_single_class(cls, target_year)
+            total_students += cnt
+        flash(f'Bulk promotion complete! Promoted {total_students} students across {len(classes_to_promote)} class sections for {target_year}.', 'success')
+    else:
+        cls = Class.query.get_or_404(int(class_id_param))
+        cnt, next_name = _promote_single_class(cls, target_year)
+        flash(f'Promoted {cnt} students of {cls.display_name} to {next_name} for session {target_year}.', 'success')
+
+    return redirect(url_for('admin.promotion'))
+
+
 @admin_bp.route('/students/<int:student_id>')
 @login_required
 @admin_required
 def student_profile(student_id):
     student = Student.query.get_or_404(student_id)
+    selected_subject = request.args.get('subject', 'All')
+
+    from app.models import TeacherClassSubject
+    subjects_query = db.session.query(TeacherClassSubject.subject)\
+                               .filter_by(class_id=student.class_id).distinct().all()
+    available_subjects = [s[0] for s in subjects_query]
+    if 'General' not in available_subjects:
+        available_subjects.append('General')
 
     # Pillar scores history (last 8 weeks)
     now = datetime.now()
@@ -652,12 +767,15 @@ def student_profile(student_id):
 
     pillar_history = {}
     for pillar in PillarScore.PILLARS:
-        scores = PillarScore.query.filter(
+        q = PillarScore.query.filter(
             PillarScore.student_id == student_id,
             PillarScore.pillar == pillar,
             PillarScore.year == cy,
             PillarScore.week_number >= start_wk
-        ).order_by(PillarScore.week_number).all()
+        )
+        if selected_subject != 'All':
+            q = q.filter(PillarScore.subject == selected_subject)
+        scores = q.order_by(PillarScore.week_number).all()
         pillar_history[pillar] = scores
 
     # Attendance summary (last 30 days)
@@ -679,14 +797,19 @@ def student_profile(student_id):
     # Current week radar data
     radar_data = {}
     for pillar in PillarScore.PILLARS:
-        score = PillarScore.query.filter_by(
+        q = PillarScore.query.filter_by(
             student_id=student_id, pillar=pillar,
             week_number=cw, year=cy
-        ).first()
+        )
+        if selected_subject != 'All':
+            q = q.filter_by(subject=selected_subject)
+        score = q.first()
         radar_data[pillar] = score.qualitative if score else 0
 
     return render_template('admin/student_profile.html',
         student=student,
+        selected_subject=selected_subject,
+        available_subjects=available_subjects,
         pillar_history=pillar_history,
         pillar_labels=PillarScore.PILLAR_LABELS,
         pillar_icons=PillarScore.PILLAR_ICONS,
