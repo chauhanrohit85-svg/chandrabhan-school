@@ -48,6 +48,14 @@ def teacher_client(app):
     return c
 
 
+@pytest.fixture()
+def director_client(app):
+    """Fresh authenticated director client per test."""
+    c = app.test_client()
+    c.post('/auth/login', data={'username': 'director', 'password': 'director123'}, follow_redirects=True)
+    return c
+
+
 def _seed_test_data():
     """Seed minimal data for tests."""
     from datetime import date, datetime
@@ -56,6 +64,11 @@ def _seed_test_data():
     admin = User(username='test_admin', full_name='Test Admin', role='admin')
     admin.set_password('admin123')
     _db.session.add(admin)
+
+    # Director
+    director = User(username='director', full_name='Test Director', role='director')
+    director.set_password('director123')
+    _db.session.add(director)
 
     # Class
     cls = Class(grade=5, section='A', academic_year='2025-26')

@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}Director Executive Dashboard{% endblock %}
+{% block page_title %}Confidential Director / Executive Dashboard{% endblock %}
+
+{% block content %}
+<div style="max-width:1300px; margin:0 auto; display:flex; flex-direction:column; gap:24px;">
+
+  <!-- Banner -->
+  <div class="card" style="background:linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%); color:white; border:none; box-shadow:0 10px 25px rgba(0,0,0,0.3);">
+    <div class="card-body" style="padding:28px 32px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:16px;">
+      <div>
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+          <span style="font-size:28px;">👑</span>
+          <h1 style="font-size:26px; font-weight:800; color:#f8fafc; margin:0;">Super-Admin Executive Controls</h1>
+        </div>
+        <div style="font-size:14px; color:#cbd5e1;">
+          Confidential audit overview & management supervision portal for <strong>{{ school_name }}</strong>.
+        </div>
+      </div>
+      <div style="display:flex; gap:12px;">
+        <a href="{{ url_for('director.compliance') }}" class="btn" style="background:#4f46e5; color:white; border:none; font-weight:700; font-size:13px;">
+          📊 Compliance Audit
+        </a>
+        <a href="{{ url_for('director.inspection') }}" class="btn" style="background:#10b981; color:white; border:none; font-weight:700; font-size:13px;">
+          📋 Physical Notebook Inspection
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- KPI Cards -->
+  <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:20px;">
+    
+    <!-- Compliance Rate -->
+    <div class="kpi-card" style="border-top:4px solid #4f46e5;">
+      <div class="kpi-icon" style="background:#ede9fe;">📈</div>
+      <div class="kpi-value" style="color:#4f46e5;">{{ compliance_rate }}%</div>
+      <div class="kpi-label">7-Day Submission Compliance</div>
+      <div style="font-size:12px; color:#64748b; margin-top:8px;">Teacher & Principal Submissions</div>
+    </div>
+
+    <!-- Active Flagged Weak Students -->
+    <div class="kpi-card" style="border-top:4px solid #f59e0b;">
+      <div class="kpi-icon" style="background:#fef3c7;">⚠️</div>
+      <div class="kpi-value" style="color:#d97706;">{{ active_alerts_count }}</div>
+      <div class="kpi-label">Flagged Weak Students</div>
+      <div style="font-size:12px; color:#64748b; margin-top:8px;">Foundational Literacy & Alerts</div>
+    </div>
+
+    <!-- Overdue Interventions (>7 Days Inaction) -->
+    <div class="kpi-card" style="border-top:4px solid #ef4444;">
+      <div class="kpi-icon" style="background:#fee2e2;">🚨</div>
+      <div class="kpi-value" style="color:#dc2626;">{{ overdue_alerts|length }}</div>
+      <div class="kpi-label">Overdue Interventions</div>
+      <div style="font-size:12px; color:#ef4444; margin-top:8px; font-weight:700;">>7 Days Without Action Plan</div>
+    </div>
+
+    <!-- Total Enrolment -->
+    <div class="kpi-card" style="border-top:4px solid #10b981;">
+      <div class="kpi-icon" style="background:#d1fae5;">🎒</div>
+      <div class="kpi-value" style="color:#059669;">{{ total_students }}</div>
+      <div class="kpi-label">Total Student Roster</div>
+      <div style="font-size:12px; color:#64748b; margin-top:8px;">Across {{ total_classes }} Class Sections</div>
+    </div>
+
+  </div>
+
+  <!-- Overdue Interventions Alert Table (>7 Days Inaction) -->
+  <div class="card" style="border-top:4px solid #ef4444;">
+    <div class="card-header" style="background:#fff5f5;">
+      <h2 style="color:#991b1b;">🚨 Weak Students Overdue for Management Intervention (>7 Days Inaction)</h2>
+    </div>
+    <div class="table-wrapper">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Student</th>
+            <th>Class</th>
+            <th>Alert Type & Message</th>
+            <th>Flagged Date</th>
+            <th>Last Remedial Action</th>
+            <th style="text-align:right;">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for alert in overdue_alerts %}
+          <tr>
+            <td style="font-weight:700; color:#1e293b;">{{ alert.student.full_name }} (Roll: {{ alert.student.roll_number }})</td>
+            <td><span class="badge badge-info">{{ alert.student.class_ref.display_name }}</span></td>
+            <td>
+              <span class="badge badge-danger">{{ alert.alert_type }}</span>
+              <div style="font-size:12px; color:#475569; margin-top:4px;">{{ alert.message }}</div>
+            </td>
+            <td style="font-size:12px; color:#64748b;">{{ alert.created_at.strftime('%d %b %Y') }}</td>
+            <td>
+              {% if alert.action_tag %}
+              <span class="badge badge-purple">{{ alert.action_tag }}</span>
+              <div style="font-size:11px; color:#64748b; margin-top:2px;">{{ alert.action_at.strftime('%d %b %Y') }}</div>
+              {% else %}
+              <span class="badge badge-danger">No Action Recorded</span>
+              {% endif %}
+            </td>
+            <td style="text-align:right;">
+              <a href="{{ url_for('director.inspection') }}" class="btn btn-sm btn-danger" style="font-size:11px; padding:4px 8px;">
+                Inspect Notebook
+              </a>
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="6" style="text-align:center; padding:32px; color:#10b981; font-weight:600;">
+              🎉 All flagged weak students have recent remedial intervention plans logged!
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

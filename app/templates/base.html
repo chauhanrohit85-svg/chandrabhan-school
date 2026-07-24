@@ -44,7 +44,49 @@
     <nav class="sidebar-nav">
       {% if current_user.is_authenticated %}
 
-        {% if current_user.role == 'admin' %}
+        {% if current_user.role == 'director' %}
+          <div class="nav-section-title" style="color:#a855f7;">Super-Admin / Director</div>
+          <a href="{{ url_for('director.dashboard') }}"
+             class="nav-link {% if request.endpoint == 'director.dashboard' %}active{% endif %}"
+             style="background:rgba(168,85,247,0.15);">
+            <span class="nav-icon">👑</span> Director Portal
+          </a>
+          <a href="{{ url_for('director.compliance') }}"
+             class="nav-link {% if request.endpoint == 'director.compliance' %}active{% endif %}">
+            <span class="nav-icon">📊</span> Compliance Audit
+          </a>
+          <a href="{{ url_for('director.inspection') }}"
+             class="nav-link {% if request.endpoint == 'director.inspection' %}active{% endif %}">
+            <span class="nav-icon">📋</span> Physical Inspection
+          </a>
+
+          <div class="nav-section-title" style="margin-top:16px;">Administration</div>
+          <a href="{{ url_for('admin.dashboard') }}"
+             class="nav-link {% if request.endpoint == 'admin.dashboard' %}active{% endif %}">
+            <span class="nav-icon">📊</span> Principal Dashboard
+          </a>
+          <a href="{{ url_for('admin.alerts') }}"
+             class="nav-link {% if request.endpoint == 'admin.alerts' %}active{% endif %}">
+            <span class="nav-icon">🚨</span> Alerts
+          </a>
+          <a href="{{ url_for('admin.users') }}"
+             class="nav-link {% if 'admin.users' in request.endpoint or 'admin.edit_user' in request.endpoint %}active{% endif %}">
+            <span class="nav-icon">👨‍🏫</span> Teachers
+          </a>
+          <a href="{{ url_for('admin.students') }}"
+             class="nav-link {% if 'admin.student' in request.endpoint %}active{% endif %}">
+            <span class="nav-icon">🎒</span> Students
+          </a>
+          <a href="{{ url_for('admin.classes') }}"
+             class="nav-link {% if request.endpoint == 'admin.classes' %}active{% endif %}">
+            <span class="nav-icon">🏛️</span> Classes
+          </a>
+          <a href="{{ url_for('admin.promotion') }}"
+             class="nav-link {% if 'admin.promotion' in request.endpoint %}active{% endif %}">
+            <span class="nav-icon">🎓</span> Session Promotion
+          </a>
+
+        {% elif current_user.role == 'admin' %}
           <div class="nav-section-title">Administration</div>
           <a href="{{ url_for('admin.dashboard') }}"
              class="nav-link {% if request.endpoint == 'admin.dashboard' %}active{% endif %}">

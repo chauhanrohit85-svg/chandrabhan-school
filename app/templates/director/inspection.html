@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Physical Inspection Sheet Generator{% endblock %}
+{% block page_title %}Physical Notebook Inspection Sheet{% endblock %}
+
+{% block extra_head %}
+<style>
+@media print {
+  body { background: white !important; color: black !important; }
+  .sidebar, header, .no-print { display: none !important; }
+  .main-content { margin-left: 0 !important; padding: 0 !important; width: 100% !important; }
+  .card { box-shadow: none !important; border: 1px solid #000 !important; margin-bottom: 20px !important; page-break-inside: avoid; }
+  .table-wrapper { overflow: visible !important; }
+  .data-table th, .data-table td { border: 1px solid #000 !important; padding: 6px 8px !important; color: black !important; font-size: 11px !important; }
+  .print-header { display: block !important; text-align: center; margin-bottom: 20px; }
+}
+.print-header { display: none; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div style="max-width:1300px; margin:0 auto; display:flex; flex-direction:column; gap:24px;">
+
+  <!-- Actions & Print Bar -->
+  <div class="card no-print" style="background:#f8fafc; border-left:4px solid #10b981;">
+    <div class="card-body" style="padding:16px 24px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
+      <div>
+        <h2 style="margin:0 0 4px; font-size:18px; color:#1e293b;">📋 Director Physical Notebook Inspection Generator</h2>
+        <div style="font-size:13px; color:#64748b;">
+          Print this sheet for classroom visits to physically verify remedial notebooks of flagged weak students.
+        </div>
+      </div>
+      <button onclick="window.print()" class="btn btn-success" style="font-weight:700; font-size:13px; display:flex; align-items:center; gap:6px;">
+        🖨️ Print / Save PDF Sheet
+      </button>
+    </div>
+  </div>
+
+  <!-- Print Letterhead -->
+  <div class="print-header">
+    <h1 style="font-size:22px; font-weight:800; text-transform:uppercase; margin:0;">{{ school_name }}</h1>
+    <h2 style="font-size:16px; font-weight:700; color:#333; margin:4px 0 12px;">PHYSICAL STUDENT NOTEBOOK INSPECTION SHEET</h2>
+    <div style="font-size:12px; font-weight:600;">Inspection Date: {{ today.strftime('%d %B %Y') }} | Academic Session: {{ academic_year }}</div>
+    <hr style="border:1px solid #000; margin-top:10px;" />
+  </div>
+
+  <!-- Inspection Roster Grouped by Class -->
+  {% for cls_name, items in grouped_inspection.items() %}
+  <div class="card" style="margin-bottom:20px; page-break-inside:avoid;">
+    <div class="card-header" style="background:#1e293b; color:white; padding:12px 20px;">
+      <h2 style="color:white; margin:0; font-size:16px;">🏛️ {{ cls_name }} — Flagged Students Inspection List</h2>
+    </div>
+    <div class="table-wrapper">
+      <table class="data-table" style="width:100%;">
+        <thead>
+          <tr>
+            <th style="width:60px;">Roll</th>
+            <th style="width:160px;">Student Name</th>
+            <th style="width:180px;">Flagged Alert & Reason</th>
+            <th style="width:200px;">Logged Remedial Action Plan</th>
+            <th style="width:100px;">Action Date</th>
+            <th style="min-width:240px; text-align:left;">Director Notebook Inspection Remarks & Sign-Off</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in items %}
+          <tr>
+            <td style="font-weight:700; text-align:center;">{{ item.student.roll_number }}</td>
+            <td style="font-weight:600; color:#0f172a;">{{ item.student.full_name }}</td>
+            <td>
+              <span class="badge badge-danger" style="font-size:10px;">{{ item.alert.alert_type }}</span>
+              <div style="font-size:11px; color:#334155; margin-top:2px;">{{ item.alert.message }}</div>
+            </td>
+            <td>
+              {% if item.alert.action_tag %}
+              <span class="badge badge-purple" style="font-size:10px;">{{ item.alert.action_tag }}</span>
+              <div style="font-size:11px; color:#475569; margin-top:2px;">{{ item.alert.action_taken or '—' }}</div>
+              {% else %}
+              <span class="badge badge-danger" style="font-size:10px;">⚠️ No Action Logged</span>
+              {% endif %}
+            </td>
+            <td style="font-size:11px; color:#64748b;">
+              {{ item.alert.action_at.strftime('%d/%m/%Y') if item.alert.action_at else '—' }}
+            </td>
+            <!-- Physical Check Column for School Visits -->
+            <td style="border:1px solid #cbd5e1; height:45px; vertical-align:top; padding:6px; background:#fafafa;">
+              <div style="font-size:10px; color:#94a3b8; font-style:italic;">[ ] Notebook Checked &nbsp;&nbsp; [ ] Work Verified &nbsp;&nbsp; Sign: ____________</div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% else %}
+  <div class="card">
+    <div class="card-body" style="text-align:center; padding:48px; color:#10b981;">
+      <div style="font-size:36px; margin-bottom:8px;">🎉</div>
+      <div style="font-size:16px; font-weight:700;">No active weak student alerts needing physical inspection today!</div>
+    </div>
+  </div>
+  {% endfor %}
+
+</div>
+{% endblock %}

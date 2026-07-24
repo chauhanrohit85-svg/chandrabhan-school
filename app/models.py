@@ -280,6 +280,13 @@ class AlertFlag(db.Model):
         'consistent_decline': 'red',
         'absent_streak': 'orange',
     }
+    INTERVENTION_TAGS = [
+        'Remedial Homework Given',
+        '1-on-1 Practice',
+        'Parent Notified',
+        'Peer Tutoring',
+        'Special Drill Assigned'
+    ]
 
     id = db.Column(db.Integer, primary_key=True)
     student_id = db.Column(db.Integer, db.ForeignKey('students.id'), nullable=False)
@@ -288,6 +295,24 @@ class AlertFlag(db.Model):
     message = db.Column(db.Text, nullable=False)
     is_resolved = db.Column(db.Integer, default=0)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # Remedial Intervention Tracking Fields
+    action_taken = db.Column(db.Text, nullable=True)
+    action_tag = db.Column(db.String(100), nullable=True)
+    action_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    action_at = db.Column(db.DateTime, nullable=True)
+
+    action_user = db.relationship('User', foreign_keys=[action_by])
+
+    @property
+    def is_overdue_intervention(self):
+        """Returns True if alert has been active >7 days without an action plan recorded."""
+        if self.is_resolved:
+            return False
+        ref_date = self.action_at or self.created_at
+        if not ref_date:
+            return False
+        return (datetime.utcnow() - ref_date).days >= 7
 
     def __repr__(self):
         return f'<AlertFlag {self.student_id} {self.alert_type}>'

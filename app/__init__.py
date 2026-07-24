@@ -50,12 +50,14 @@ def create_app(config_name: str = 'default') -> Flask:
     from app.teacher import teacher_bp
     from app.tv import tv_bp
     from app.api import api_bp
+    from app.director import director_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(teacher_bp)
     app.register_blueprint(tv_bp)
     app.register_blueprint(api_bp)
+    app.register_blueprint(director_bp)
 
     # Root redirect
     from flask import redirect, url_for
@@ -64,7 +66,9 @@ def create_app(config_name: str = 'default') -> Flask:
     @app.route('/')
     def index():
         if current_user.is_authenticated:
-            if current_user.role == 'admin':
+            if current_user.role == 'director':
+                return redirect(url_for('director.dashboard'))
+            elif current_user.role == 'admin':
                 return redirect(url_for('admin.dashboard'))
             elif current_user.role == 'teacher':
                 return redirect(url_for('teacher.dashboard'))

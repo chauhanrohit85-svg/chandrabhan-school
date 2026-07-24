@@ -453,6 +453,28 @@ def resolve_alert(alert_id):
     return redirect(url_for('admin.alerts'))
 
 
+@admin_bp.route('/alerts/<int:alert_id>/intervention', methods=['POST'])
+@login_required
+def record_intervention(alert_id):
+    alert = AlertFlag.query.get_or_404(alert_id)
+    action_tag = request.form.get('action_tag', '').strip()
+    action_note = request.form.get('action_taken', '').strip()
+
+    alert.action_tag = action_tag or 'Remedial Intervention'
+    alert.action_taken = action_note or action_tag
+    alert.action_by = current_user.id
+    alert.action_at = datetime.utcnow()
+
+    if request.form.get('resolve') == '1':
+        alert.is_resolved = 1
+
+    db.session.commit()
+    flash(f'Remedial action recorded for {alert.student.full_name}: {alert.action_tag}', 'success')
+
+    next_page = request.referrer or url_for('admin.alerts')
+    return redirect(next_page)
+
+
 # ---------------------------------------------------------------------------
 # User Management
 # ---------------------------------------------------------------------------

@@ -44,12 +44,18 @@ def seed(app_instance=None):
         db.create_all()
         print("[OK] Tables recreated." if drop_tables else "[OK] Tables created.")
 
-        # ── Admin ──────────────────────────────────────────────────────────
+        # ── Admin & Director ───────────────────────────────────────────────
         if not User.query.filter_by(username='principal').first():
             admin = User(username='principal', full_name='Principal Admin', role='admin')
             admin.set_password('admin123')
             db.session.add(admin)
             print("[OK] Admin account created: principal / admin123")
+
+        if not User.query.filter_by(username='director').first():
+            director = User(username='director', full_name='Director / Super-Admin', role='director')
+            director.set_password('director123')
+            db.session.add(director)
+            print("[OK] Director super-admin account created: director / director123")
 
         # ── Classes (Nursery to Class 10, Sections A & B) ───────────────────
         academic_year = app.config['ACADEMIC_YEAR']

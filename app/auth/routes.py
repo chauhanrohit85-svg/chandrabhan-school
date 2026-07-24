@@ -11,7 +11,7 @@ from app.extensions import db
 
 @auth_bp.route('/login', methods=['GET', 'POST'])
 def login():
-    if current_user.is_authenticated:
+    if request.method == 'GET' and current_user.is_authenticated:
         return _role_redirect(current_user)
 
     if request.method == 'POST':
@@ -43,8 +43,22 @@ def logout():
     return redirect(url_for('auth.login'))
 
 
+from functools import wraps
+
+def director_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not current_user.is_authenticated or current_user.role != 'director':
+            flash('Access Denied: Director / Super-Admin privileges required.', 'danger')
+            return redirect(url_for('auth.login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+
 def _role_redirect(user):
-    if user.role == 'admin':
+    if user.role == 'director':
+        return redirect(url_for('director.dashboard'))
+    elif user.role == 'admin':
         return redirect(url_for('admin.dashboard'))
     elif user.role == 'teacher':
         return redirect(url_for('teacher.dashboard'))

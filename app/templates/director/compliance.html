@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}Teacher & Principal Compliance Audit{% endblock %}
+{% block page_title %}Teacher & Principal Submission Compliance Audit{% endblock %}
+
+{% block content %}
+<div style="max-width:1300px; margin:0 auto; display:flex; flex-direction:column; gap:24px;">
+
+  <!-- Date Filter Card -->
+  <div class="card">
+    <div class="card-body" style="padding:20px 24px;">
+      <form method="GET" style="display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
+        <label style="font-weight:700; color:#475569; font-size:14px;">📅 Audit Date:</label>
+        <input type="date" name="date" value="{{ selected_date }}" max="{{ today }}" class="form-control" style="width:200px;" />
+        <button type="submit" class="btn btn-primary">Generate Audit Report</button>
+        <a href="{{ url_for('director.compliance', date=today) }}" class="btn btn-outline">Today</a>
+      </form>
+    </div>
+  </div>
+
+  <!-- Compliance Audit Table -->
+  <div class="card">
+    <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+      <h2>📊 Staff Submission Compliance Audit — {{ selected_date.strftime('%A, %d %B %Y') }}</h2>
+    </div>
+    <div class="table-wrapper">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Staff Name</th>
+            <th>Role</th>
+            <th>Daily Logs Submitted</th>
+            <th>Attendance Marked</th>
+            <th>Exact Log Timestamp</th>
+            <th>Compliance Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in teacher_audit_list %}
+          <tr>
+            <td style="font-weight:700; color:#1e293b;">
+              {{ item.user.full_name }} ({{ item.user.username }})
+            </td>
+            <td>
+              {% if item.user.role == 'admin' %}
+              <span class="badge badge-purple">Principal</span>
+              {% else %}
+              <span class="badge badge-info">Teacher</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if item.logs %}
+              <span class="badge badge-success">{{ item.logs|length }} Log(s) Submitted</span>
+              {% else %}
+              <span class="badge badge-danger">0 Logs</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if item.attendance_count > 0 %}
+              <span class="badge badge-success">{{ item.attendance_count }} Students Marked</span>
+              {% else %}
+              <span class="badge badge-danger">Not Marked</span>
+              {% endif %}
+            </td>
+            <td style="font-size:13px; color:#475569;">
+              {% if item.latest_timestamp %}
+              ⏱️ {{ item.latest_timestamp.strftime('%H:%M:%S IST') }}
+              {% else %}
+              <span style="color:#cbd5e1;">—</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if item.status == 'on_time' %}
+              <span class="badge badge-success" style="font-size:12px; font-weight:700;">✅ Compliant</span>
+              {% else %}
+              <span class="badge badge-danger" style="font-size:12px; font-weight:700;">❌ Missed Entry</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

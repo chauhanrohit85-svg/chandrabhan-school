@@ -26,21 +26,45 @@
       {% for alert in active_alerts %}
       {% set colors = {'below_threshold': ('#fef3c7','#92400e','⚠️'), 'consistent_decline': ('#fee2e2','#991b1b','📉'), 'absent_streak': ('#fff7ed','#c2410c','🏃')} %}
       {% set bg, fg, icon = colors.get(alert.alert_type, ('#f8fafc','#475569','ℹ️')) %}
-      <div style="display:flex;align-items:flex-start;gap:16px;padding:18px 24px;border-bottom:1px solid #f1f5f9;background:{{ bg }}08;{% if loop.last %}border:none;{% endif %}">
-        <div style="font-size:24px;flex-shrink:0;margin-top:2px;">{{ icon }}</div>
-        <div style="flex:1;">
-          <div style="font-size:15px;font-weight:600;color:#1e293b;margin-bottom:4px;">{{ alert.message }}</div>
-          <div style="display:flex;align-items:center;gap:10px;margin-top:6px;flex-wrap:wrap;">
-            <span class="badge badge-warning">{{ alert_type_labels.get(alert.alert_type, alert.alert_type) }}</span>
-            {% if alert.pillar %}<span class="badge badge-purple">{{ alert.pillar.replace('_',' ').title() }}</span>{% endif %}
-            <span style="font-size:12px;color:#94a3b8;">{{ alert.created_at.strftime('%d %b %Y, %H:%M') }}</span>
-            <a href="{{ url_for('admin.student_profile', student_id=alert.student_id) }}"
-               class="btn btn-outline btn-sm" style="font-size:12px;">View Student →</a>
+      <div style="display:flex;flex-direction:column;gap:12px;padding:18px 24px;border-bottom:1px solid #f1f5f9;background:{{ bg }}08;{% if loop.last %}border:none;{% endif %}">
+        <div style="display:flex;align-items:flex-start;gap:16px;">
+          <div style="font-size:24px;flex-shrink:0;margin-top:2px;">{{ icon }}</div>
+          <div style="flex:1;">
+            <div style="font-size:15px;font-weight:600;color:#1e293b;margin-bottom:4px;">{{ alert.message }}</div>
+            <div style="display:flex;align-items:center;gap:10px;margin-top:6px;flex-wrap:wrap;">
+              <span class="badge badge-warning">{{ alert_type_labels.get(alert.alert_type, alert.alert_type) }}</span>
+              {% if alert.pillar %}<span class="badge badge-purple">{{ alert.pillar.replace('_',' ').title() }}</span>{% endif %}
+              <span style="font-size:12px;color:#94a3b8;">{{ alert.created_at.strftime('%d %b %Y, %H:%M') }}</span>
+              <a href="{{ url_for('admin.student_profile', student_id=alert.student_id) }}"
+                 class="btn btn-outline btn-sm" style="font-size:12px;">View Student →</a>
+            </div>
+            
+            {% if alert.action_tag %}
+            <div style="margin-top:8px; padding:6px 12px; background:#f3e8ff; border-radius:6px; font-size:12px; color:#6b21a8; font-weight:600;">
+              ⚡ Remedial Action Recorded: <strong>{{ alert.action_tag }}</strong>
+              {% if alert.action_taken and alert.action_taken != alert.action_tag %}- {{ alert.action_taken }}{% endif %}
+              <span style="color:#a855f7; font-weight:normal; margin-left:8px;">({{ alert.action_at.strftime('%d %b %H:%M') }})</span>
+            </div>
+            {% endif %}
           </div>
+          <form action="{{ url_for('admin.resolve_alert', alert_id=alert.id) }}" method="POST">
+            <button type="submit" class="btn btn-success btn-sm">✓ Resolve</button>
+          </form>
         </div>
-        <form action="{{ url_for('admin.resolve_alert', alert_id=alert.id) }}" method="POST">
-          <button type="submit" class="btn btn-success btn-sm">✓ Resolve</button>
-        </form>
+
+        <!-- Quick-Click Remedial Intervention Tag Bar -->
+        <div style="background:#f8fafc; padding:10px 14px; border-radius:8px; border:1px solid #e2e8f0;">
+          <div style="font-size:11px; font-weight:700; color:#475569; margin-bottom:6px; text-transform:uppercase;">
+            🛠️ Quick Log Remedial Action Taken:
+          </div>
+          <form action="{{ url_for('admin.record_intervention', alert_id=alert.id) }}" method="POST" style="display:flex; flex-wrap:wrap; gap:6px; align-items:center;">
+            <button type="submit" name="action_tag" value="Remedial Homework Given" class="btn btn-outline btn-sm" style="font-size:11px; padding:2px 8px; background:white;">+ Remedial Homework Given</button>
+            <button type="submit" name="action_tag" value="1-on-1 Practice" class="btn btn-outline btn-sm" style="font-size:11px; padding:2px 8px; background:white;">+ 1-on-1 Practice</button>
+            <button type="submit" name="action_tag" value="Parent Notified" class="btn btn-outline btn-sm" style="font-size:11px; padding:2px 8px; background:white;">+ Parent Notified</button>
+            <button type="submit" name="action_tag" value="Peer Tutoring" class="btn btn-outline btn-sm" style="font-size:11px; padding:2px 8px; background:white;">+ Peer Tutoring</button>
+            <button type="submit" name="action_tag" value="Special Drill Assigned" class="btn btn-outline btn-sm" style="font-size:11px; padding:2px 8px; background:white;">+ Special Drill Assigned</button>
+          </form>
+        </div>
       </div>
       {% endfor %}
     </div>
