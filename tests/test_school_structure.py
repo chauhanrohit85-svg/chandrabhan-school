@@ -11,7 +11,7 @@ def test_full_school_structure_creation(app):
     """
     with app.app_context():
         from app.extensions import db
-        academic_year = '2025-26'
+        academic_year = '2026-27'
         grades = [-3, -2, -1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
         sections = ['A', 'B']
 

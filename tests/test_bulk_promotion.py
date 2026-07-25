@@ -12,20 +12,20 @@ def test_bulk_class_promotion(app):
     """
     with app.app_context():
         from app.extensions import db
-        # 1. Setup Nursery-A (2025-26) with active students
-        nursery_a = Class.query.filter_by(grade=-3, section='A', academic_year='2025-26').first()
+        # 1. Setup Nursery-A (2026-27) with active students
+        nursery_a = Class.query.filter_by(grade=-3, section='A', academic_year='2026-27').first()
         if not nursery_a:
-            nursery_a = Class(grade=-3, section='A', academic_year='2025-26')
+            nursery_a = Class(grade=-3, section='A', academic_year='2026-27')
             db.session.add(nursery_a)
             db.session.flush()
 
         student_nursery = Student(roll_number='01', full_name='Nursery Kid', class_id=nursery_a.id)
         db.session.add(student_nursery)
 
-        # 2. Setup Class 10-A (2025-26) with active students
-        class10_a = Class.query.filter_by(grade=10, section='A', academic_year='2025-26').first()
+        # 2. Setup Class 10-A (2026-27) with active students
+        class10_a = Class.query.filter_by(grade=10, section='A', academic_year='2026-27').first()
         if not class10_a:
-            class10_a = Class(grade=10, section='A', academic_year='2025-26')
+            class10_a = Class(grade=10, section='A', academic_year='2026-27')
             db.session.add(class10_a)
             db.session.flush()
 
@@ -33,23 +33,23 @@ def test_bulk_class_promotion(app):
         db.session.add(student_c10)
         db.session.commit()
 
-        # 3. Promote Nursery-A to 2026-27 session
-        cnt_promoted, target_name = _promote_single_class(nursery_a, '2026-27')
+        # 3. Promote Nursery-A to 2027-28 session
+        cnt_promoted, target_name = _promote_single_class(nursery_a, '2027-28')
         assert cnt_promoted == 1
         assert 'LKG-A' in target_name
 
         # Verify student_nursery is now in LKG-A
-        updated_nursery_student = Student.query.get(student_nursery.id)
+        updated_nursery_student = db.session.get(Student, student_nursery.id)
         assert updated_nursery_student.class_ref.display_name == 'LKG-A'
-        assert updated_nursery_student.class_ref.academic_year == '2026-27'
+        assert updated_nursery_student.class_ref.academic_year == '2027-28'
 
-        # 4. Promote Class 10-A to 2026-27 session (Graduation)
-        cnt_graduated, grad_name = _promote_single_class(class10_a, '2026-27')
+        # 4. Promote Class 10-A to 2027-28 session (Graduation)
+        cnt_graduated, grad_name = _promote_single_class(class10_a, '2027-28')
         assert cnt_graduated == 1
         assert grad_name == 'Graduated'
 
         # Verify senior student is marked inactive (graduated)
-        updated_c10_student = Student.query.get(student_c10.id)
+        updated_c10_student = db.session.get(Student, student_c10.id)
         assert updated_c10_student.is_active == 0
 
 

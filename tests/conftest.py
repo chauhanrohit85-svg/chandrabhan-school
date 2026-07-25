@@ -71,7 +71,7 @@ def _seed_test_data():
     _db.session.add(director)
 
     # Class
-    cls = Class(grade=5, section='A', academic_year='2025-26')
+    cls = Class(grade=5, section='A', academic_year='2026-27')
     _db.session.add(cls)
     _db.session.flush()
 

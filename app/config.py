@@ -13,7 +13,7 @@ class Config:
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     WTF_CSRF_ENABLED = True
     SCHOOL_NAME = os.environ.get('SCHOOL_NAME', 'Chandrabhan Singh Public School')
-    ACADEMIC_YEAR = os.environ.get('ACADEMIC_YEAR', '2025-26')
+    ACADEMIC_YEAR = os.environ.get('ACADEMIC_YEAR', '2026-27')
     ALERT_THRESHOLD = float(os.environ.get('ALERT_THRESHOLD', '2.0'))
 
     @staticmethod

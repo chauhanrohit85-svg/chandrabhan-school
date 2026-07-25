@@ -99,7 +99,7 @@ class Class(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     grade = db.Column(db.Integer, nullable=False)             # -3 (Nursery) .. 10 (Class 10)
     section = db.Column(db.String(5), nullable=False)         # A / B
-    academic_year = db.Column(db.String(10), nullable=False)  # "2025-26"
+    academic_year = db.Column(db.String(10), nullable=False)  # "2026-27"
 
     students = db.relationship('Student', backref='class_ref', lazy='dynamic')
     logs = db.relationship('TeacherDailyLog', backref='class_ref', lazy='dynamic')
