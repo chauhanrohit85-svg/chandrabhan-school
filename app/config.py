@@ -19,7 +19,7 @@ class Config:
     @staticmethod
     def _db_uri():
         """Auto-switch to PostgreSQL or custom SQLite path if configured (Render cloud)."""
-        url = os.environ.get('DATABASE_URL')
+        url = (os.environ.get('DATABASE_URL') or '').strip()
         if url:
             if url.startswith('postgres://'):
                 url = url.replace('postgres://', 'postgresql://', 1)
@@ -35,8 +35,10 @@ def _get_engine_options(is_dev=False):
     options = {'pool_pre_ping': True}
     if uri.startswith('sqlite'):
         options['connect_args'] = {'check_same_thread': False}
-    elif not is_dev:
+    else:
         options['pool_recycle'] = 300
+        options['pool_size'] = 5
+        options['max_overflow'] = 10
     return options
 
 
