@@ -1,13 +1,14 @@
-"""
-Chandrabhan Singh Public School — Management Ecosystem
-Entry point for local and cloud (Render/Gunicorn) deployment.
-"""
 import os
 from app import create_app
+from app.extensions import db
 
 app = create_app(os.environ.get('FLASK_ENV', 'development'))
 
-# Automatically initialize and seed database on startup if empty
+# Auto-create missing tables on boot without dropping existing data
+with app.app_context():
+    db.create_all()
+
+# Automatically seed default accounts & classes if database is empty
 try:
     from migrations.init_db import seed as seed_db
     seed_db(app)

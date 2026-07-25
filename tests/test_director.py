@@ -123,3 +123,62 @@ def test_overdue_intervention_flag(app):
         db.session.commit()
 
         assert old_alert.is_overdue_intervention is True
+
+
+def test_backup_page_loads(director_client):
+    """Director can load Backup & Restore management page."""
+    resp = director_client.get('/director/backup', follow_redirects=True)
+    assert resp.status_code == 200
+    assert b'Backup' in resp.data or b'Restore' in resp.data
+
+
+def test_backup_export(director_client):
+    """Director can export full school backup as JSON file."""
+    import json
+    resp = director_client.get('/director/backup/export')
+    assert resp.status_code == 200
+    assert resp.content_type == 'application/json'
+
+    data = json.loads(resp.data.decode('utf-8'))
+    assert 'tables' in data
+    assert 'students' in data['tables']
+    assert 'users' in data['tables']
+
+
+def test_backup_restore(director_client, app):
+    """Director can restore database records from JSON backup file."""
+    import json, io
+    backup_content = {
+        'version': '2.0',
+        'tables': {
+            'students': [{
+                'id': 9999,
+                'roll_number': '777',
+                'full_name': 'Restored Student Test',
+                'class_id': 1,
+                'parent_contact': '+91 7000000777',
+                'is_active': 1
+            }]
+        }
+    }
+    json_bytes = json.dumps(backup_content).encode('utf-8')
+    data = {
+        'backup_file': (io.BytesIO(json_bytes), 'backup_test.json')
+    }
+
+    resp = director_client.post('/director/backup/restore', data=data, content_type='multipart/form-data', follow_redirects=True)
+    assert resp.status_code == 200
+
+    with app.app_context():
+        restored = Student.query.get(9999)
+        assert restored is not None
+        assert restored.full_name == 'Restored Student Test'
+
+
+def test_postgresql_uri_conversion(monkeypatch):
+    """Verify postgres:// is converted to postgresql:// in Config._db_uri()."""
+    from app.config import Config
+    monkeypatch.setenv('DATABASE_URL', 'postgres://user:pass@ep-test.neon.tech/neondb')
+    uri = Config._db_uri()
+    assert uri.startswith('postgresql://')
+

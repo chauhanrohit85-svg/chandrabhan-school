@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Database Backup & Restore{% endblock %}
+{% block page_title %}Confidential System Backup & Database Management{% endblock %}
+
+{% block content %}
+<div style="max-width:1200px; margin:0 auto; display:flex; flex-direction:column; gap:24px;">
+
+  <!-- Status Card -->
+  <div class="card" style="border-left:4px solid #4f46e5;">
+    <div class="card-body" style="padding:24px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:16px;">
+      <div>
+        <div style="font-size:12px; font-weight:700; color:#6366f1; text-transform:uppercase; letter-spacing:0.5px;">Active Database Engine</div>
+        <h2 style="margin:4px 0 0; font-size:22px; color:#1e293b;">{{ db_backend }}</h2>
+        <div style="font-size:12px; color:#64748b; margin-top:4px; font-family:monospace; word-break:break-all;">{{ db_uri }}</div>
+      </div>
+      <div>
+        <a href="{{ url_for('director.backup_export') }}" class="btn btn-primary" style="font-weight:700; padding:10px 20px; font-size:14px;">
+          ⬇️ Download Full School Backup (.json)
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Database Table Summary Grid -->
+  <div class="card">
+    <div class="card-header">
+      <h2>📊 Live Database Record Breakdown</h2>
+    </div>
+    <div style="padding:24px; display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:16px;">
+      <div style="background:#f8fafc; padding:16px; border-radius:8px; border:1px solid #e2e8f0;">
+        <div style="font-size:20px; font-weight:800; color:#0f172a;">{{ stats.students }}</div>
+        <div style="font-size:12px; color:#64748b;">Enrolled Students</div>
+      </div>
+      <div style="background:#f8fafc; padding:16px; border-radius:8px; border:1px solid #e2e8f0;">
+        <div style="font-size:20px; font-weight:800; color:#0f172a;">{{ stats.classes }}</div>
+        <div style="font-size:12px; color:#64748b;">Class Sections</div>
+      </div>
+      <div style="background:#f8fafc; padding:16px; border-radius:8px; border:1px solid #e2e8f0;">
+        <div style="font-size:20px; font-weight:800; color:#0f172a;">{{ stats.daily_logs }}</div>
+        <div style="font-size:12px; color:#64748b;">Daily Syllabus Logs</div>
+      </div>
+      <div style="background:#f8fafc; padding:16px; border-radius:8px; border:1px solid #e2e8f0;">
+        <div style="font-size:20px; font-weight:800; color:#0f172a;">{{ stats.attendance_records }}</div>
+        <div style="font-size:12px; color:#64748b;">Attendance Records</div>
+      </div>
+      <div style="background:#f8fafc; padding:16px; border-radius:8px; border:1px solid #e2e8f0;">
+        <div style="font-size:20px; font-weight:800; color:#0f172a;">{{ stats.pillar_scores }}</div>
+        <div style="font-size:12px; color:#64748b;">5-Pillar Evaluations</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Restore Card -->
+  <div class="card" style="border-top:4px solid #10b981;">
+    <div class="card-header" style="background:#f0fdf4;">
+      <h2 style="color:#065f46;">📥 Safe Database Restore from Backup File</h2>
+    </div>
+    <div class="card-body" style="padding:24px;">
+      <form action="{{ url_for('director.backup_restore') }}" method="POST" enctype="multipart/form-data" style="display:flex; flex-direction:column; gap:16px;">
+        <div style="font-size:14px; color:#334155;">
+          Upload a previously exported JSON backup file (`chandrabhan_school_backup_*.json`) to restore school rosters, attendance, syllabus logs, and evaluation scores.
+        </div>
+        <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
+          <input type="file" name="backup_file" accept=".json" class="form-control" required style="max-width:400px;" />
+          <button type="submit" class="btn btn-success" style="font-weight:700;">
+            🚀 Upload & Restore School Data
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Free Cloud PostgreSQL Setup Instructions Card -->
+  <div class="card" style="background:#0f172a; color:white; border:none;">
+    <div class="card-body" style="padding:28px;">
+      <h2 style="color:#f8fafc; font-size:20px; margin-top:0;">🌐 100% Free Permanent Cloud Database Setup Guide</h2>
+      <p style="color:#cbd5e1; font-size:14px; line-height:1.6;">
+        Render free web services use ephemeral local disks, which reset when the app sleeps. To make student records, logs, and user accounts survive server restarts <strong>permanently for $0/month</strong>, connect a free Cloud PostgreSQL database:
+      </p>
+      
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:16px; margin-top:20px;">
+        <div style="background:rgba(255,255,255,0.06); padding:16px; border-radius:8px; border:1px solid rgba(255,255,255,0.1);">
+          <div style="font-weight:700; color:#38bdf8; font-size:15px;">Option A: Neon.tech (Recommended)</div>
+          <div style="font-size:13px; color:#94a3b8; margin-top:6px;">
+            1. Sign up at <a href="https://neon.tech" target="_blank" style="color:#38bdf8; text-decoration:underline;">neon.tech</a> (Free Tier).<br/>
+            2. Create a project and copy the Connection String.<br/>
+            3. On Render Dashboard → Environment → Add Variable: `DATABASE_URL` = your Neon PostgreSQL URL.
+          </div>
+        </div>
+
+        <div style="background:rgba(255,255,255,0.06); padding:16px; border-radius:8px; border:1px solid rgba(255,255,255,0.1);">
+          <div style="font-weight:700; color:#a7f3d0; font-size:15px;">Option B: Supabase</div>
+          <div style="font-size:13px; color:#94a3b8; margin-top:6px;">
+            1. Create a free project at <a href="https://supabase.com" target="_blank" style="color:#a7f3d0; text-decoration:underline;">supabase.com</a>.<br/>
+            2. Go to Database Settings → URI.<br/>
+            3. Set `DATABASE_URL` on Render to your Supabase PostgreSQL connection string.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
