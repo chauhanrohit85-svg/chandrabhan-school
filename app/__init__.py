@@ -74,17 +74,31 @@ def create_app(config_name: str = 'default') -> Flask:
                 return redirect(url_for('teacher.dashboard'))
         return redirect(url_for('auth.login'))
 
-    # Create tables on first run & log database connection status
+    # Create tables on first run & log database connection status with retry logic
+    import time
     with app.app_context():
         db_uri = app.config.get('SQLALCHEMY_DATABASE_URI', '')
         if 'postgresql' in db_uri:
             print("\n================================================================")
             print("  CONNECTED TO PERMANENT CLOUD DATABASE: PostgreSQL (Neon)")
-            print("================================================================\n")
+            print("================================================ failure/retry enabled ...\n")
         else:
             print("\n================================================================")
             print("  CONNECTED TO LOCAL DATABASE: SQLite (Testing/Development)")
             print("================================================================\n")
-        db.create_all()
+        
+        max_retries = 3
+        for attempt in range(1, max_retries + 1):
+            try:
+                db.create_all()
+                break
+            except Exception as e:
+                print(f"[!] Database connection attempt {attempt}/{max_retries} failed: {e}")
+                if attempt < max_retries:
+                    print("[*] Retrying database connection in 2 seconds...")
+                    time.sleep(2)
+                else:
+                    print("[CRITICAL] Could not establish connection to PostgreSQL after retries.")
+                    raise e
 
     return app

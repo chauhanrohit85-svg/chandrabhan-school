@@ -120,3 +120,17 @@ def test_multi_reboot_persistence(app):
         rechecked_s2 = db.session.get(Student, s_id)
         assert rechecked_s2 is not None
         assert rechecked_s2.full_name == 'Reboot Student'
+
+
+def test_postgresql_engine_sslmode_options(monkeypatch):
+    """
+    Verify that _get_engine_options includes sslmode=require and strips trailing slashes for PostgreSQL connections.
+    """
+    from app.config import Config, _get_engine_options
+    monkeypatch.setenv('DATABASE_URL', 'postgresql://user:pass@ep-test.neon.tech/neondb/')
+    uri = Config._db_uri()
+    assert uri == 'postgresql://user:pass@ep-test.neon.tech/neondb'
+    options = _get_engine_options()
+    assert options['connect_args']['sslmode'] == 'require'
+    assert options['pool_pre_ping'] is True
+
