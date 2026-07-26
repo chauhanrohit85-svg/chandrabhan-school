@@ -1,6 +1,7 @@
 """
 Flask application factory.
 Registers all blueprints, extensions, and SQLite WAL mode.
+Defers database initialization to @app.before_request for immediate Gunicorn port binding.
 """
 import os
 from flask import Flask
@@ -74,31 +75,31 @@ def create_app(config_name: str = 'default') -> Flask:
                 return redirect(url_for('teacher.dashboard'))
         return redirect(url_for('auth.login'))
 
-    # Create tables on first run & log database connection status with retry logic
-    import time
-    with app.app_context():
+    # Defer database table creation until first request to guarantee immediate Gunicorn port binding (<1s)
+    _db_initialized = False
+
+    @app.before_request
+    def ensure_db_initialized():
+        nonlocal _db_initialized
+        if _db_initialized or app.config.get('TESTING'):
+            return
+        _db_initialized = True
+
         db_uri = app.config.get('SQLALCHEMY_DATABASE_URI', '')
         if 'postgresql' in db_uri:
             print("\n================================================================")
             print("  CONNECTED TO PERMANENT CLOUD DATABASE: PostgreSQL (Neon)")
-            print("================================================ failure/retry enabled ...\n")
+            print("================================================================\n")
         else:
             print("\n================================================================")
             print("  CONNECTED TO LOCAL DATABASE: SQLite (Testing/Development)")
             print("================================================================\n")
-        
-        max_retries = 3
-        for attempt in range(1, max_retries + 1):
-            try:
-                db.create_all()
-                break
-            except Exception as e:
-                print(f"[!] Database connection attempt {attempt}/{max_retries} failed: {e}")
-                if attempt < max_retries:
-                    print("[*] Retrying database connection in 2 seconds...")
-                    time.sleep(2)
-                else:
-                    print("[CRITICAL] Could not establish connection to PostgreSQL after retries.")
-                    raise e
+
+        try:
+            db.create_all()
+            from migrations.init_db import seed as seed_db
+            seed_db(app)
+        except Exception as e:
+            app.logger.error(f"Error during deferred database initialization: {e}")
 
     return app

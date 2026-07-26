@@ -134,3 +134,16 @@ def test_postgresql_engine_sslmode_options(monkeypatch):
     assert options['connect_args']['sslmode'] == 'require'
     assert options['pool_pre_ping'] is True
 
+
+def test_deferred_app_initialization_instant_import():
+    """
+    Verify that create_app() instantiates instantly without making synchronous database calls.
+    """
+    import time
+    start_time = time.time()
+    application = create_app('development')
+    elapsed = time.time() - start_time
+    assert elapsed < 1.0  # Must instantiate in under 1 second
+    assert application is not None
+
+
