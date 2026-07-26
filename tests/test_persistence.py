@@ -149,11 +149,27 @@ def test_deferred_app_initialization_instant_import():
 
 def test_render_health_check_endpoint(client):
     """
-    Verify that GET /health returns HTTP 200 OK instantly for Render automated health checks.
+    Verify that GET /health returns HTTP 200 OK with JSON {"status": "ok"} instantly
+    for Render automated health checks, without triggering database initialization.
     """
     resp = client.get('/health')
     assert resp.status_code == 200
-    assert resp.data == b'OK'
+    assert resp.content_type == 'application/json'
+    data = resp.get_json()
+    assert data['status'] == 'ok'
+
+
+def test_health_endpoint_bypasses_db_hooks():
+    """
+    Verify that /health works on a completely fresh app without any prior DB setup.
+    This confirms @app.before_request skips DB initialization for health check paths.
+    """
+    fresh_app = create_app('testing')
+    with fresh_app.test_client() as c:
+        resp = c.get('/health')
+        assert resp.status_code == 200
+        assert resp.get_json()['status'] == 'ok'
+
 
 
 
