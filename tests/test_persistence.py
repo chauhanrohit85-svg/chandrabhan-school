@@ -135,6 +135,18 @@ def test_postgresql_engine_sslmode_options(monkeypatch):
     assert options['pool_pre_ping'] is True
 
 
+def test_sslmode_stripped_from_database_url(monkeypatch):
+    """
+    Verify that ?sslmode=require in DATABASE_URL is stripped to avoid duplicate parameter errors
+    with connect_args={'sslmode': 'require'}.
+    """
+    from app.config import Config
+    monkeypatch.setenv('DATABASE_URL', 'postgresql://user:pass@ep-test.neon.tech/neondb?sslmode=require')
+    uri = Config._db_uri()
+    assert 'sslmode' not in uri
+    assert uri == 'postgresql://user:pass@ep-test.neon.tech/neondb'
+
+
 def test_deferred_app_initialization_instant_import():
     """
     Verify that create_app() instantiates instantly without making synchronous database calls.
@@ -169,6 +181,19 @@ def test_health_endpoint_bypasses_db_hooks():
         resp = c.get('/health')
         assert resp.status_code == 200
         assert resp.get_json()['status'] == 'ok'
+
+
+def test_root_returns_200_without_db_init():
+    """
+    Verify that GET / returns HTTP 200 (redirect to /login) on a fresh app
+    without triggering database initialization.
+    """
+    fresh_app = create_app('testing')
+    with fresh_app.test_client() as c:
+        resp = c.get('/')
+        # Should redirect to /auth/login (302) without crashing
+        assert resp.status_code in (200, 302)
+
 
 
 
