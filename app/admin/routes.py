@@ -447,9 +447,13 @@ def alerts():
 @admin_required
 def resolve_alert(alert_id):
     alert = AlertFlag.query.get_or_404(alert_id)
-    alert.is_resolved = 1
-    db.session.commit()
-    flash('Alert resolved.', 'success')
+    try:
+        alert.is_resolved = 1
+        db.session.commit()
+        flash('Alert resolved.', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error resolving alert: {str(e)}', 'danger')
     return redirect(url_for('admin.alerts'))
 
 
@@ -460,10 +464,17 @@ def record_intervention(alert_id):
     action_tag = request.form.get('action_tag', '').strip()
     action_note = request.form.get('action_taken', '').strip()
 
-    alert.action_tag = action_tag or 'Remedial Intervention'
-    alert.action_taken = action_note or action_tag
-    alert.action_by = current_user.id
-    alert.action_at = datetime.utcnow()
+    try:
+        alert.action_tag = action_tag or 'Remedial Intervention'
+        alert.action_taken = action_note or action_tag
+        alert.action_by = current_user.id
+        alert.action_at = datetime.utcnow()
+        db.session.commit()
+        flash('Remedial action log updated successfully.', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error recording intervention: {str(e)}', 'danger')
+    return redirect(url_for('admin.alerts'))
 
     if request.form.get('resolve') == '1':
         alert.is_resolved = 1
@@ -501,12 +512,16 @@ def add_user():
         flash(f'Username "{username}" already exists.', 'danger')
         return redirect(url_for('admin.users'))
 
-    user = User(username=username, full_name=full_name, role=role,
-                assigned_class_id=int(class_id) if class_id else None)
-    user.set_password(password)
-    db.session.add(user)
-    db.session.commit()
-    flash(f'Account created for {full_name}.', 'success')
+    try:
+        user = User(username=username, full_name=full_name, role=role,
+                    assigned_class_id=int(class_id) if class_id else None)
+        user.set_password(password)
+        db.session.add(user)
+        db.session.commit()
+        flash(f'Account created for {full_name}.', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error creating user account: {str(e)}', 'danger')
     return redirect(url_for('admin.users'))
 
 
@@ -518,17 +533,21 @@ def edit_user(user_id):
     classes = Class.query.order_by(Class.grade, Class.section).all()
 
     if request.method == 'POST':
-        user.full_name = request.form.get('full_name', user.full_name).strip()
-        user.role = request.form.get('role', user.role)
-        class_id = request.form.get('assigned_class_id') or None
-        user.assigned_class_id = int(class_id) if class_id else None
-        user.is_active = 1 if request.form.get('is_active') else 0
-        new_pw = request.form.get('new_password', '')
-        if new_pw:
-            user.set_password(new_pw)
-        db.session.commit()
-        flash(f'Updated {user.full_name} successfully.', 'success')
-        return redirect(url_for('admin.users'))
+        try:
+            user.full_name = request.form.get('full_name', user.full_name).strip()
+            user.role = request.form.get('role', user.role)
+            class_id = request.form.get('assigned_class_id') or None
+            user.assigned_class_id = int(class_id) if class_id else None
+            user.is_active = 1 if request.form.get('is_active') else 0
+            new_pw = request.form.get('new_password', '')
+            if new_pw:
+                user.set_password(new_pw)
+            db.session.commit()
+            flash(f'Updated {user.full_name} successfully.', 'success')
+            return redirect(url_for('admin.users'))
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Error updating user: {str(e)}', 'danger')
 
     return render_template('admin/edit_user.html', user=user, classes=classes)
 
@@ -538,10 +557,14 @@ def edit_user(user_id):
 @admin_required
 def toggle_user(user_id):
     user = User.query.get_or_404(user_id)
-    user.is_active = 0 if user.is_active else 1
-    db.session.commit()
-    state = 'activated' if user.is_active else 'deactivated'
-    flash(f'{user.full_name} has been {state}.', 'info')
+    try:
+        user.is_active = 0 if user.is_active else 1
+        db.session.commit()
+        state = 'activated' if user.is_active else 'deactivated'
+        flash(f'{user.full_name} has been {state}.', 'info')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error toggling user status: {str(e)}', 'danger')
     return redirect(url_for('admin.users'))
 
 
@@ -564,10 +587,14 @@ def add_user_mapping(user_id):
     if exists:
         flash('This mapping already exists.', 'warning')
     else:
-        mapping = TeacherClassSubject(teacher_id=user_id, class_id=class_id, subject=subject)
-        db.session.add(mapping)
-        db.session.commit()
-        flash('Class-Subject mapping added.', 'success')
+        try:
+            mapping = TeacherClassSubject(teacher_id=user_id, class_id=class_id, subject=subject)
+            db.session.add(mapping)
+            db.session.commit()
+            flash('Class-Subject mapping added.', 'success')
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Error adding mapping: {str(e)}', 'danger')
         
     return redirect(url_for('admin.edit_user', user_id=user_id))
 
@@ -579,9 +606,13 @@ def delete_user_mapping(mapping_id):
     from app.models import TeacherClassSubject
     mapping = TeacherClassSubject.query.get_or_404(mapping_id)
     user_id = mapping.teacher_id
-    db.session.delete(mapping)
-    db.session.commit()
-    flash('Class-Subject mapping removed.', 'success')
+    try:
+        db.session.delete(mapping)
+        db.session.commit()
+        flash('Class-Subject mapping removed.', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error deleting mapping: {str(e)}', 'danger')
     return redirect(url_for('admin.edit_user', user_id=user_id))
 
 
@@ -611,10 +642,14 @@ def add_class():
     if Class.query.filter_by(grade=grade, section=section, academic_year=academic_year).first():
         flash(f'Class {grade}-{section} already exists.', 'warning')
     else:
-        cls = Class(grade=grade, section=section, academic_year=academic_year)
-        db.session.add(cls)
-        db.session.commit()
-        flash(f'Class {grade}-{section} created.', 'success')
+        try:
+            cls = Class(grade=grade, section=section, academic_year=academic_year)
+            db.session.add(cls)
+            db.session.commit()
+            flash(f'Class {grade}-{section} created.', 'success')
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Error creating class: {str(e)}', 'danger')
     return redirect(url_for('admin.classes'))
 
 

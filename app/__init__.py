@@ -74,8 +74,17 @@ def create_app(config_name: str = 'default') -> Flask:
                 return redirect(url_for('teacher.dashboard'))
         return redirect(url_for('auth.login'))
 
-    # Create tables on first run
+    # Create tables on first run & log database connection status
     with app.app_context():
+        db_uri = app.config.get('SQLALCHEMY_DATABASE_URI', '')
+        if 'postgresql' in db_uri:
+            print("\n================================================================")
+            print("  CONNECTED TO PERMANENT CLOUD DATABASE: PostgreSQL (Neon)")
+            print("================================================================\n")
+        else:
+            print("\n================================================================")
+            print("  CONNECTED TO LOCAL DATABASE: SQLite (Testing/Development)")
+            print("================================================================\n")
         db.create_all()
 
     return app

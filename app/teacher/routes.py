@@ -216,9 +216,13 @@ def daily_log():
             )
             db.session.add(log)
 
-        db.session.commit()
-        flash(f'Daily log for {subject} submitted successfully!', 'success')
-        return redirect(url_for('teacher.dashboard'))
+        try:
+            db.session.commit()
+            flash(f'Daily log for {subject} submitted successfully!', 'success')
+            return redirect(url_for('teacher.dashboard'))
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Error saving daily log: {str(e)}', 'danger')
 
     return render_template('teacher/daily_log.html',
         cls=cls,
@@ -278,9 +282,13 @@ def attendance():
                 db.session.add(rec)
             submitted_count += 1
 
-        db.session.commit()
-        flash(f'Attendance saved for {submitted_count} students on {log_date.strftime("%d %b %Y")}.', 'success')
-        return redirect(url_for('teacher.dashboard'))
+        try:
+            db.session.commit()
+            flash(f'Attendance saved for {submitted_count} students on {log_date.strftime("%d %b %Y")}.', 'success')
+            return redirect(url_for('teacher.dashboard'))
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Error saving attendance: {str(e)}', 'danger')
 
     # Load existing attendance and audit details
     existing_attendance = {}
@@ -346,10 +354,14 @@ def add_student():
     if existing:
         flash(f'Roll number {roll} already exists in {cls.display_name}.', 'warning')
     else:
-        student = Student(roll_number=roll, full_name=name, class_id=cls.id, parent_contact=contact)
-        db.session.add(student)
-        db.session.commit()
-        flash(f'Student {name} added to {cls.display_name} successfully.', 'success')
+        try:
+            student = Student(roll_number=roll, full_name=name, class_id=cls.id, parent_contact=contact)
+            db.session.add(student)
+            db.session.commit()
+            flash(f'Student {name} added to {cls.display_name} successfully.', 'success')
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Error adding student: {str(e)}', 'danger')
 
     return redirect(url_for('teacher.students'))
 
@@ -387,13 +399,17 @@ def edit_student(student_id):
                 flash(f'Roll number {roll} is already in use by another student.', 'warning')
                 return redirect(url_for('teacher.edit_student', student_id=student_id))
 
-        student.roll_number = roll
-        student.full_name = name
-        student.parent_contact = contact
-        student.is_active = is_active
-        db.session.commit()
-        flash(f'Student {name} updated successfully.', 'success')
-        return redirect(url_for('teacher.students'))
+        try:
+            student.roll_number = roll
+            student.full_name = name
+            student.parent_contact = contact
+            student.is_active = is_active
+            db.session.commit()
+            flash(f'Student {name} updated successfully.', 'success')
+            return redirect(url_for('teacher.students'))
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Error updating student: {str(e)}', 'danger')
 
     return render_template('teacher/edit_student.html', student=student, cls=student.class_ref)
 
@@ -517,8 +533,12 @@ def pillar_entry():
                 db.session.add(score)
             saved += 1
 
-    db.session.commit()
-    flash(f'Pillar scores for {subject} saved for Week {current_week}!', 'success')
+    try:
+        db.session.commit()
+        flash(f'Pillar scores for {subject} saved for Week {current_week}!', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error saving pillar scores: {str(e)}', 'danger')
     return redirect(url_for('teacher.pillars'))
 
 

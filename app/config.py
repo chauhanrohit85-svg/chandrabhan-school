@@ -23,6 +23,8 @@ class Config:
         if url:
             if url.startswith('postgres://'):
                 url = url.replace('postgres://', 'postgresql://', 1)
+            if not url.startswith('postgresql://'):
+                raise ValueError(f"Invalid DATABASE_URL scheme: '{url}'. Must start with postgresql://")
             return url
         sqlite_path = os.environ.get('SQLITE_DB_PATH')
         if sqlite_path:
@@ -37,6 +39,7 @@ def _get_engine_options(is_dev=False):
         options['connect_args'] = {'check_same_thread': False}
     else:
         options['pool_recycle'] = 300
+        options['pool_timeout'] = 30
         options['pool_size'] = 5
         options['max_overflow'] = 10
     return options

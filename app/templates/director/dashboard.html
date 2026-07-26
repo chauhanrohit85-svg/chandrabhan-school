@@ -29,6 +29,23 @@
         </a>
       </div>
     </div>
+  <!-- System & Storage Health Badge -->
+  <div class="card" style="border-left:4px solid #10b981; background:#f0fdf4;">
+    <div class="card-body" style="padding:16px 24px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:16px;">
+      <div style="display:flex; align-items:center; gap:12px;">
+        <span style="font-size:24px;">🛡️</span>
+        <div>
+          <div style="font-size:12px; font-weight:800; color:#065f46; text-transform:uppercase; letter-spacing:0.5px;">System & Storage Health</div>
+          <div style="font-size:16px; font-weight:700; color:#0f172a; margin-top:2px;">
+            Active Engine: <span style="color:#047857;">{{ db_backend }}</span>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex; align-items:center; gap:20px; font-size:13px; font-weight:600; color:#334155;">
+        <div>⚡ Status: <span class="badge" style="background:#10b981; color:white; padding:4px 8px; border-radius:4px;">{{ db_status }}</span></div>
+        <div>📅 Academic Session: <span style="color:#4f46e5; font-weight:800;">{{ academic_year }}</span></div>
+      </div>
+    </div>
   </div>
 
   <!-- KPI Cards -->

@@ -38,6 +38,14 @@ def dashboard():
     actual_daily_logs = TeacherDailyLog.query.filter(TeacherDailyLog.log_date >= seven_days_ago).count()
     compliance_rate = round((actual_daily_logs / expected_daily_logs * 100), 1) if expected_daily_logs else 0
 
+    db_uri = current_app.config.get('SQLALCHEMY_DATABASE_URI', '')
+    if 'postgresql' in db_uri:
+        db_backend = "PostgreSQL (Neon Cloud Vault)"
+        db_status = "Connected & Persistent"
+    else:
+        db_backend = "SQLite (Local Testing)"
+        db_status = "Local File Storage"
+
     return render_template('director/dashboard.html',
         today=today,
         total_students=total_students,
@@ -47,6 +55,9 @@ def dashboard():
         overdue_alerts=overdue_alerts,
         submitted_logs_count=submitted_logs_count,
         compliance_rate=compliance_rate,
+        db_backend=db_backend,
+        db_status=db_status,
+        academic_year=academic_year,
     )
 
 
