@@ -4,7 +4,8 @@ Registers all blueprints, extensions, and SQLite WAL mode.
 Defers database initialization to @app.before_request for immediate Gunicorn port binding.
 """
 import os
-from flask import Flask
+from flask import Flask, request, redirect, url_for
+from flask_login import current_user
 from app.extensions import db, login_manager
 from app.config import config
 
@@ -61,9 +62,6 @@ def create_app(config_name: str = 'default') -> Flask:
     app.register_blueprint(director_bp)
 
     # Root redirect
-    from flask import redirect, url_for
-    from flask_login import current_user
-
     @app.route('/')
     def index():
         if current_user.is_authenticated:
@@ -75,13 +73,18 @@ def create_app(config_name: str = 'default') -> Flask:
                 return redirect(url_for('teacher.dashboard'))
         return redirect(url_for('auth.login'))
 
+    # Instant top-level health check endpoint for Render automated health checkers (<10ms response)
+    @app.route('/health')
+    def health():
+        return 'OK', 200
+
     # Defer database table creation until first request to guarantee immediate Gunicorn port binding (<1s)
     _db_initialized = False
 
     @app.before_request
     def ensure_db_initialized():
         nonlocal _db_initialized
-        if _db_initialized or app.config.get('TESTING'):
+        if _db_initialized or app.config.get('TESTING') or request.path in ('/health', '/api/health'):
             return
         _db_initialized = True
 

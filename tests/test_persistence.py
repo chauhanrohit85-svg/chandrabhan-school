@@ -147,3 +147,13 @@ def test_deferred_app_initialization_instant_import():
     assert application is not None
 
 
+def test_render_health_check_endpoint(client):
+    """
+    Verify that GET /health returns HTTP 200 OK instantly for Render automated health checks.
+    """
+    resp = client.get('/health')
+    assert resp.status_code == 200
+    assert resp.data == b'OK'
+
+
+
