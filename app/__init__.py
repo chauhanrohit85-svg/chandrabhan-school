@@ -170,29 +170,29 @@ def create_app(config_name: str = 'default') -> Flask:
     def handle_programming_error(error):
         """Auto-recover from missing tables (e.g. 'relation users does not exist')."""
         nonlocal _db_initialized
-        logger.exception(f"ProgrammingError caught — attempting auto-recovery: {error}")
+        logger.exception(f"DATABASE QUERY FAILED — ProgrammingError: {error}")
         db.session.rollback()
         try:
             _init_database(app)
             _db_initialized = True
-            # Retry the original request by redirecting
             return redirect(request.url)
         except Exception as recovery_error:
-            logger.exception(f"Auto-recovery failed: {recovery_error}")
+            logger.exception(f"DATABASE QUERY FAILED — Auto-recovery failed: {recovery_error}")
             return "Internal Server Error — database tables could not be created. Check Render logs.", 500
 
     @app.errorhandler(OperationalError)
     def handle_operational_error(error):
         """Auto-recover from connection or schema errors."""
         nonlocal _db_initialized
-        logger.exception(f"OperationalError caught — attempting auto-recovery: {error}")
+        logger.exception(f"DATABASE QUERY FAILED — OperationalError: {error}")
         db.session.rollback()
         try:
             _init_database(app)
             _db_initialized = True
             return redirect(request.url)
         except Exception as recovery_error:
-            logger.exception(f"Auto-recovery failed: {recovery_error}")
+            logger.exception(f"DATABASE QUERY FAILED — Auto-recovery failed: {recovery_error}")
             return "Internal Server Error — database connection failed. Check Render logs.", 500
+
 
     return app

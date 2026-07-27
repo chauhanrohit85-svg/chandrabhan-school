@@ -15,32 +15,47 @@ from sqlalchemy.exc import ProgrammingError, OperationalError
 logger = logging.getLogger(__name__)
 
 
-@auth_bp.route('/login', methods=['GET', 'POST'])
-def login():
+def _ensure_tables_and_master_accounts():
+    """Fail-safe table creation and master account seeding check before User queries."""
     try:
-        if request.method == 'GET' and current_user.is_authenticated:
-            return _role_redirect(current_user)
-    except (ProgrammingError, OperationalError) as e:
-        logger.exception(f"Database error on GET /login: {e}. Auto-creating missing tables...")
-        db.session.rollback()
         db.create_all()
         from migrations.init_db import seed as seed_db
         seed_db(current_app)
+    except Exception:
+        logger.exception("DATABASE QUERY FAILED during table check:")
+
+
+@auth_bp.route('/login', methods=['GET', 'POST'])
+def login():
+    # Execute light health check before running User queries
+    _ensure_tables_and_master_accounts()
+
+    try:
+        if request.method == 'GET' and current_user.is_authenticated:
+            return _role_redirect(current_user)
+    except Exception:
+        logger.exception("DATABASE QUERY FAILED on GET /login:")
+        db.session.rollback()
 
     if request.method == 'POST':
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '')
         remember = request.form.get('remember') == 'on'
 
+        user = None
         try:
             user = User.query.filter_by(username=username, is_active=1).first()
-        except (ProgrammingError, OperationalError) as e:
-            logger.exception(f"Database error on POST /login: {e}. Auto-creating missing tables...")
+        except Exception:
+            logger.exception("DATABASE QUERY FAILED on POST /login User lookup:")
             db.session.rollback()
-            db.create_all()
-            from migrations.init_db import seed as seed_db
-            seed_db(current_app)
-            user = User.query.filter_by(username=username, is_active=1).first()
+            _ensure_tables_and_master_accounts()
+            try:
+                user = User.query.filter_by(username=username, is_active=1).first()
+            except Exception:
+                logger.exception("DATABASE QUERY FAILED after recovery retry:")
+                flash('Database connection issue. Please try again in a few moments.', 'danger')
+                return render_template('auth/login.html',
+                                       school_name=current_app.config['SCHOOL_NAME'])
 
         if user and user.check_password(password):
             login_user(user, remember=remember)
@@ -54,6 +69,7 @@ def login():
 
     return render_template('auth/login.html',
                            school_name=current_app.config['SCHOOL_NAME'])
+
 
 
 
