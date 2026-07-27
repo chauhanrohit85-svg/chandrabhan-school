@@ -223,6 +223,36 @@ def test_login_page_renders_with_seeded_accounts():
         assert director.role == 'director'
 
 
+def test_sqlalchemy_database_uri_explicit_mapping_and_db_create_all(monkeypatch):
+    """
+    Verify that SQLALCHEMY_DATABASE_URI is explicitly mapped from DATABASE_URL,
+    converts postgres:// to postgresql://, is never None/empty, and db.create_all() executes
+    without UnboundExecutionError.
+    """
+    from app.extensions import db as test_db
+    monkeypatch.setenv('DATABASE_URL', 'postgres://user:pass@localhost:5432/neondb?sslmode=require')
+    
+    # Verify Config._db_uri() converts scheme and strips sslmode query param
+    from app.config import Config
+    uri = Config._db_uri()
+    assert uri == 'postgresql://user:pass@localhost:5432/neondb'
+    assert uri is not None
+    assert len(uri) > 0
+
+    # Verify create_app handles DATABASE_URL mapping and non-empty URI
+    app_instance = create_app('development')
+    assert app_instance.config['SQLALCHEMY_DATABASE_URI'] is not None
+    assert len(app_instance.config['SQLALCHEMY_DATABASE_URI']) > 0
+
+    # Verify db.create_all executes cleanly inside app_context without UnboundExecutionError
+    mem_app = create_app('testing')
+    assert mem_app.config['SQLALCHEMY_DATABASE_URI'] == 'sqlite:///:memory:'
+    with mem_app.app_context():
+        test_db.create_all()  # Must execute without UnboundExecutionError
+
+
+
+
 
 
 

@@ -10,7 +10,8 @@ import logging
 from flask import Flask, jsonify, request, redirect, url_for
 from flask_login import current_user
 from app.extensions import db, login_manager
-from app.config import config
+from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+from app.config import config, Config, _get_engine_options, BASE_DIR
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')
 logger = logging.getLogger(__name__)
@@ -39,26 +40,56 @@ def _init_database(app):
 def create_app(config_name: str = 'default') -> Flask:
     app = Flask(__name__, instance_relative_config=True)
 
-    # Load configuration — wrapped so bad DATABASE_URL doesn't crash Gunicorn
+    # Load configuration
     try:
         app.config.from_object(config[config_name])
     except Exception as e:
-        logger.exception(f"Config loading error: {e}. Falling back to minimal config.")
-        app.config['SECRET_KEY'] = 'emergency-fallback-key'
-        app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
-        app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-        app.config['SCHOOL_NAME'] = 'Chandrabhan Singh Public School'
-        app.config['ACADEMIC_YEAR'] = '2026-27'
+        logger.exception(f"Config loading error: {e}. Falling back to default config.")
+        app.config.from_object(Config)
+
+    # Explicitly map SQLALCHEMY_DATABASE_URI from os.environ.get('DATABASE_URL') if present
+    env_db_url = (os.environ.get('DATABASE_URL') or '').strip().rstrip('/')
+    if env_db_url:
+        if env_db_url.startswith('postgres://'):
+            env_db_url = env_db_url.replace('postgres://', 'postgresql://', 1)
+        parsed = urlparse(env_db_url)
+        if parsed.query:
+            params = parse_qs(parsed.query)
+            params.pop('sslmode', None)
+            clean_query = urlencode(params, doseq=True)
+            env_db_url = urlunparse(parsed._replace(query=clean_query))
+        app.config['SQLALCHEMY_DATABASE_URI'] = env_db_url
+
+    # Fallback check: verify app.config['SQLALCHEMY_DATABASE_URI'] is NEVER None or empty
+    if not app.config.get('SQLALCHEMY_DATABASE_URI'):
+        app.config['SQLALCHEMY_DATABASE_URI'] = Config._db_uri()
+
+    # Ensure SQLALCHEMY_ENGINE_OPTIONS is populated
+    if not app.config.get('SQLALCHEMY_ENGINE_OPTIONS'):
+        app.config['SQLALCHEMY_ENGINE_OPTIONS'] = _get_engine_options()
+
+    # Check if PostgreSQL driver is available; fallback to SQLite locally if driver is missing
+    uri = app.config.get('SQLALCHEMY_DATABASE_URI', '')
+    if uri.startswith('postgresql'):
+        try:
+            import psycopg2  # noqa: F401
+        except ImportError:
+            try:
+                import psycopg  # noqa: F401
+            except ImportError:
+                logger.warning("PostgreSQL URI configured but psycopg2 driver not installed in environment. Falling back to SQLite.")
+                app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:' if app.config.get('TESTING') else f"sqlite:///{BASE_DIR / 'instance' / 'school.db'}"
+                app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {'connect_args': {'check_same_thread': False}}
 
     # Ensure instance folder exists
     os.makedirs(app.instance_path, exist_ok=True)
 
-    # Initialize extensions — never crashes on import
-    try:
-        db.init_app(app)
-    except Exception as e:
-        logger.exception(f"SQLAlchemy init error: {e}")
+    # Initialize extensions AFTER app.config['SQLALCHEMY_DATABASE_URI'] has been set
+    db.init_app(app)
     login_manager.init_app(app)
+
+
+
 
     # Enable SQLite WAL mode for concurrent writes
     if 'sqlite' in app.config.get('SQLALCHEMY_DATABASE_URI', ''):
