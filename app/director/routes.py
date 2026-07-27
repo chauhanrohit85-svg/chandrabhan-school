@@ -155,8 +155,13 @@ def _serialize_model_instance(inst):
 @login_required
 @director_required
 def backup():
-    db_uri = current_app.config['SQLALCHEMY_DATABASE_URI']
-    db_backend = "PostgreSQL (Cloud Persistent)" if "postgresql" in db_uri else "SQLite (Local/Fallback)"
+    db_uri = current_app.config.get('SQLALCHEMY_DATABASE_URI', '')
+    engine_name = getattr(db.engine, 'name', '') if hasattr(db, 'engine') else ''
+    if 'postgresql' in db_uri or 'postgres' in engine_name:
+        db_backend = "PostgreSQL (Neon Cloud Vault)"
+    else:
+        db_backend = "SQLite (Local Dev Storage)"
+
 
     stats = {
         'users': User.query.count(),

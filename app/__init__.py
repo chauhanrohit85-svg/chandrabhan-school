@@ -75,7 +75,7 @@ def create_app(config_name: str = 'default') -> Flask:
     if not app.config.get('SQLALCHEMY_ENGINE_OPTIONS'):
         app.config['SQLALCHEMY_ENGINE_OPTIONS'] = _get_engine_options()
 
-    # Driver check for local development: fall back to SQLite if PostgreSQL driver (psycopg2) is missing in environment
+    # Driver check for local development: fall back to SQLite ONLY if PostgreSQL driver (psycopg2) is missing in environment
     uri = app.config.get('SQLALCHEMY_DATABASE_URI', '')
     if uri.startswith('postgresql'):
         try:
@@ -84,9 +84,11 @@ def create_app(config_name: str = 'default') -> Flask:
             try:
                 import psycopg  # noqa: F401
             except ImportError:
-                logger.warning("PostgreSQL URI configured but psycopg2 driver not installed in environment. Falling back to SQLite.")
+                logger.warning("PostgreSQL URI configured but psycopg2 driver not installed in local environment. Falling back to SQLite.")
                 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:' if app.config.get('TESTING') else f"sqlite:///{BASE_DIR / 'instance' / 'school.db'}"
                 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {'connect_args': {'check_same_thread': False}}
+
+
 
 
     # Ensure instance folder exists
