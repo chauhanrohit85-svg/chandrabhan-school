@@ -20,21 +20,28 @@ logger = logging.getLogger(__name__)
 _HEALTH_EXEMPT_PATHS = frozenset(('/health', '/api/health'))
 
 
+import time
+
 def _init_database(app):
     """
     Safely create all database tables and seed master accounts.
+    Retries up to 3 times if PostgreSQL experiences connection latency on boot.
     Returns True on success, False on failure.
     """
-    try:
-        with app.app_context():
-            db.create_all()
-            logger.info("db.create_all() completed successfully.")
-            from migrations.init_db import seed as seed_db
-            seed_db(app)
-            return True
-    except Exception as e:
-        logger.exception(f"Database schema initialization / seeding error: {e}")
-        return False
+    retries = 3
+    for attempt in range(1, retries + 1):
+        try:
+            with app.app_context():
+                db.create_all()
+                logger.info(f"db.create_all() completed successfully on attempt {attempt}.")
+                from migrations.init_db import seed as seed_db
+                seed_db(app)
+                return True
+        except Exception as e:
+            logger.exception(f"Database schema initialization attempt {attempt}/{retries} error: {e}")
+            if attempt < retries:
+                time.sleep(1)
+    return False
 
 
 def create_app(config_name: str = 'default') -> Flask:
@@ -68,7 +75,7 @@ def create_app(config_name: str = 'default') -> Flask:
     if not app.config.get('SQLALCHEMY_ENGINE_OPTIONS'):
         app.config['SQLALCHEMY_ENGINE_OPTIONS'] = _get_engine_options()
 
-    # Check if PostgreSQL driver is available; fallback to SQLite locally if driver is missing
+    # Driver check for local development: fall back to SQLite if PostgreSQL driver (psycopg2) is missing in environment
     uri = app.config.get('SQLALCHEMY_DATABASE_URI', '')
     if uri.startswith('postgresql'):
         try:
@@ -81,12 +88,14 @@ def create_app(config_name: str = 'default') -> Flask:
                 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:' if app.config.get('TESTING') else f"sqlite:///{BASE_DIR / 'instance' / 'school.db'}"
                 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {'connect_args': {'check_same_thread': False}}
 
+
     # Ensure instance folder exists
     os.makedirs(app.instance_path, exist_ok=True)
 
     # Initialize extensions AFTER app.config['SQLALCHEMY_DATABASE_URI'] has been set
     db.init_app(app)
     login_manager.init_app(app)
+
 
 
 

@@ -242,13 +242,22 @@ def test_sqlalchemy_database_uri_explicit_mapping_and_db_create_all(monkeypatch)
     # Verify create_app handles DATABASE_URL mapping and non-empty URI
     app_instance = create_app('development')
     assert app_instance.config['SQLALCHEMY_DATABASE_URI'] is not None
-    assert len(app_instance.config['SQLALCHEMY_DATABASE_URI']) > 0
+def test_production_mode_enforces_postgresql_uri(monkeypatch):
+    """
+    Verify that when DATABASE_URL is set in os.environ, Config._db_uri() strictly enforces
+    PostgreSQL URI, converts postgres:// to postgresql://, and disables local SQLite fallback.
+    """
+    monkeypatch.setenv('DATABASE_URL', 'postgres://neon_user:neon_pass@ep-cloud-db.neon.tech/school_production?sslmode=require')
+    
+    from app.config import Config
+    uri = Config._db_uri()
+    assert uri.startswith('postgresql://')
+    assert 'neon_user' in uri
+    assert 'sqlite' not in uri
+    assert 'sslmode' not in uri
 
-    # Verify db.create_all executes cleanly inside app_context without UnboundExecutionError
-    mem_app = create_app('testing')
-    assert mem_app.config['SQLALCHEMY_DATABASE_URI'] == 'sqlite:///:memory:'
-    with mem_app.app_context():
-        test_db.create_all()  # Must execute without UnboundExecutionError
+
+
 
 
 

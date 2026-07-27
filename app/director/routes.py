@@ -41,10 +41,11 @@ def dashboard():
     db_uri = current_app.config.get('SQLALCHEMY_DATABASE_URI', '')
     if 'postgresql' in db_uri:
         db_backend = "PostgreSQL (Neon Cloud Vault)"
-        db_status = "Connected & Persistent"
+        db_status = "Permanent Cloud Vault Active"
     else:
-        db_backend = "SQLite (Local Testing)"
-        db_status = "Local File Storage"
+        db_backend = "SQLite (Local Dev Storage)"
+        db_status = "Local Standalone Mode"
+
 
     return render_template('director/dashboard.html',
         today=today,
