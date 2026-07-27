@@ -9,17 +9,38 @@ from app.models import User
 from app.extensions import db
 
 
+import logging
+from sqlalchemy.exc import ProgrammingError, OperationalError
+
+logger = logging.getLogger(__name__)
+
+
 @auth_bp.route('/login', methods=['GET', 'POST'])
 def login():
-    if request.method == 'GET' and current_user.is_authenticated:
-        return _role_redirect(current_user)
+    try:
+        if request.method == 'GET' and current_user.is_authenticated:
+            return _role_redirect(current_user)
+    except (ProgrammingError, OperationalError) as e:
+        logger.exception(f"Database error on GET /login: {e}. Auto-creating missing tables...")
+        db.session.rollback()
+        db.create_all()
+        from migrations.init_db import seed as seed_db
+        seed_db(current_app)
 
     if request.method == 'POST':
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '')
         remember = request.form.get('remember') == 'on'
 
-        user = User.query.filter_by(username=username, is_active=1).first()
+        try:
+            user = User.query.filter_by(username=username, is_active=1).first()
+        except (ProgrammingError, OperationalError) as e:
+            logger.exception(f"Database error on POST /login: {e}. Auto-creating missing tables...")
+            db.session.rollback()
+            db.create_all()
+            from migrations.init_db import seed as seed_db
+            seed_db(current_app)
+            user = User.query.filter_by(username=username, is_active=1).first()
 
         if user and user.check_password(password):
             login_user(user, remember=remember)
@@ -33,6 +54,7 @@ def login():
 
     return render_template('auth/login.html',
                            school_name=current_app.config['SCHOOL_NAME'])
+
 
 
 @auth_bp.route('/logout')

@@ -12,6 +12,7 @@ from flask_login import current_user
 from app.extensions import db, login_manager
 from app.config import config
 
+logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')
 logger = logging.getLogger(__name__)
 
 # Only /health is exempt — it never touches the database at all
@@ -24,19 +25,15 @@ def _init_database(app):
     Returns True on success, False on failure.
     """
     try:
-        db.create_all()
-        logger.info("db.create_all() completed successfully.")
+        with app.app_context():
+            db.create_all()
+            logger.info("db.create_all() completed successfully.")
+            from migrations.init_db import seed as seed_db
+            seed_db(app)
+            return True
     except Exception as e:
-        logger.exception(f"db.create_all() failed: {e}")
+        logger.exception(f"Database schema initialization / seeding error: {e}")
         return False
-
-    try:
-        from migrations.init_db import seed as seed_db
-        seed_db(app)
-    except Exception as e:
-        logger.exception(f"Database seeding error: {e}")
-
-    return True
 
 
 def create_app(config_name: str = 'default') -> Flask:
@@ -101,6 +98,10 @@ def create_app(config_name: str = 'default') -> Flask:
     app.register_blueprint(api_bp)
     app.register_blueprint(director_bp)
 
+    # Force table creation and master account seeding on startup if DB is available
+    if not app.config.get('TESTING'):
+        _init_database(app)
+
     # -------------------------------------------------------------------
     # INSTANT HEALTH ENDPOINT — never touches the database
     # -------------------------------------------------------------------
@@ -115,14 +116,20 @@ def create_app(config_name: str = 'default') -> Flask:
     @app.route('/')
     def index():
         """Root redirect. Requires DB for flask_login current_user check."""
-        if current_user.is_authenticated:
-            if current_user.role == 'director':
-                return redirect(url_for('director.dashboard'))
-            elif current_user.role == 'admin':
-                return redirect(url_for('admin.dashboard'))
-            elif current_user.role == 'teacher':
-                return redirect(url_for('teacher.dashboard'))
+        try:
+            if current_user.is_authenticated:
+                if current_user.role == 'director':
+                    return redirect(url_for('director.dashboard'))
+                elif current_user.role == 'admin':
+                    return redirect(url_for('admin.dashboard'))
+                elif current_user.role == 'teacher':
+                    return redirect(url_for('teacher.dashboard'))
+        except Exception as e:
+            logger.exception(f"Database error on index route: {e}. Auto-recovering...")
+            db.session.rollback()
+            _init_database(app)
         return redirect(url_for('auth.login'))
+
 
     # -------------------------------------------------------------------
     # LAZY DATABASE INITIALIZATION — runs on first real request

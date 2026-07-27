@@ -323,4 +323,9 @@ class AlertFlag(db.Model):
 # ---------------------------------------------------------------------------
 @login_manager.user_loader
 def load_user(user_id):
-    return db.session.get(User, int(user_id))
+    try:
+        return db.session.get(User, int(user_id))
+    except Exception:
+        db.session.rollback()
+        return None
+
