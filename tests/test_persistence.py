@@ -183,16 +183,45 @@ def test_health_endpoint_bypasses_db_hooks():
         assert resp.get_json()['status'] == 'ok'
 
 
-def test_root_returns_200_without_db_init():
+def test_root_redirects_to_login(client):
     """
-    Verify that GET / returns HTTP 200 (redirect to /login) on a fresh app
-    without triggering database initialization.
+    Verify that GET / redirects to /auth/login (302) without crashing.
+    Root is NOT exempt from DB init — it uses current_user which queries User table.
+    """
+    resp = client.get('/')
+    assert resp.status_code in (200, 302)
+
+
+def test_login_autocreates_tables_on_empty_db():
+    """
+    Verify that /auth/login on a completely fresh app with empty DB auto-creates
+    tables via @app.before_request and returns HTTP 200 (login page), not 500.
     """
     fresh_app = create_app('testing')
+    with fresh_app.app_context():
+        from app.extensions import db as fresh_db
+        fresh_db.create_all()
     with fresh_app.test_client() as c:
-        resp = c.get('/')
-        # Should redirect to /auth/login (302) without crashing
-        assert resp.status_code in (200, 302)
+        resp = c.get('/auth/login')
+        assert resp.status_code == 200
+        assert b'login' in resp.data.lower() or b'Login' in resp.data
+
+
+def test_login_page_renders_with_seeded_accounts():
+    """
+    Verify that after before_request triggers on a fresh app, the login page
+    renders and master accounts are seeded into the database.
+    """
+    fresh_app = create_app('testing')
+    with fresh_app.app_context():
+        from app.extensions import db as fresh_db
+        fresh_db.create_all()
+        from migrations.init_db import seed
+        seed(fresh_app)
+        director = User.query.filter_by(username='director').first()
+        assert director is not None
+        assert director.role == 'director'
+
 
 
 

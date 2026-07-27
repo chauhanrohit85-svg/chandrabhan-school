@@ -3,6 +3,7 @@ Flask application factory.
 Registers all blueprints, extensions, and SQLite WAL mode.
 Defers database initialization to @app.before_request for immediate Gunicorn port binding.
 Crash-proof: create_app() and all imports are wrapped so Gunicorn never exits on config errors.
+Auto-recovers from missing tables by catching ProgrammingError/OperationalError.
 """
 import os
 import logging
@@ -13,8 +14,29 @@ from app.config import config
 
 logger = logging.getLogger(__name__)
 
-# Paths that are exempt from database initialization — served instantly
-_HEALTH_EXEMPT_PATHS = frozenset(('/', '/health', '/api/health'))
+# Only /health is exempt — it never touches the database at all
+_HEALTH_EXEMPT_PATHS = frozenset(('/health', '/api/health'))
+
+
+def _init_database(app):
+    """
+    Safely create all database tables and seed master accounts.
+    Returns True on success, False on failure.
+    """
+    try:
+        db.create_all()
+        logger.info("db.create_all() completed successfully.")
+    except Exception as e:
+        logger.exception(f"db.create_all() failed: {e}")
+        return False
+
+    try:
+        from migrations.init_db import seed as seed_db
+        seed_db(app)
+    except Exception as e:
+        logger.exception(f"Database seeding error: {e}")
+
+    return True
 
 
 def create_app(config_name: str = 'default') -> Flask:
@@ -24,7 +46,7 @@ def create_app(config_name: str = 'default') -> Flask:
     try:
         app.config.from_object(config[config_name])
     except Exception as e:
-        logger.error(f"Config loading error: {e}. Falling back to minimal config.")
+        logger.exception(f"Config loading error: {e}. Falling back to minimal config.")
         app.config['SECRET_KEY'] = 'emergency-fallback-key'
         app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
         app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -38,7 +60,7 @@ def create_app(config_name: str = 'default') -> Flask:
     try:
         db.init_app(app)
     except Exception as e:
-        logger.error(f"SQLAlchemy init error: {e}")
+        logger.exception(f"SQLAlchemy init error: {e}")
     login_manager.init_app(app)
 
     # Enable SQLite WAL mode for concurrent writes
@@ -80,12 +102,19 @@ def create_app(config_name: str = 'default') -> Flask:
     app.register_blueprint(director_bp)
 
     # -------------------------------------------------------------------
-    # INSTANT ENDPOINTS — These NEVER touch the database
+    # INSTANT HEALTH ENDPOINT — never touches the database
     # -------------------------------------------------------------------
+    @app.route('/health')
+    def health():
+        """Render deployment health check — returns JSON instantly, zero DB queries."""
+        return jsonify({'status': 'ok'}), 200
 
+    # -------------------------------------------------------------------
+    # ROOT REDIRECT — needs DB init first (current_user queries User table)
+    # -------------------------------------------------------------------
     @app.route('/')
     def index():
-        """Root redirect. Returns immediately for unauthenticated users."""
+        """Root redirect. Requires DB for flask_login current_user check."""
         if current_user.is_authenticated:
             if current_user.role == 'director':
                 return redirect(url_for('director.dashboard'))
@@ -95,22 +124,19 @@ def create_app(config_name: str = 'default') -> Flask:
                 return redirect(url_for('teacher.dashboard'))
         return redirect(url_for('auth.login'))
 
-    @app.route('/health')
-    def health():
-        """Render deployment health check — returns JSON instantly, zero DB queries."""
-        return jsonify({'status': 'ok'}), 200
-
     # -------------------------------------------------------------------
-    # LAZY DATABASE INITIALIZATION — only on real user routes
+    # LAZY DATABASE INITIALIZATION — runs on first real request
+    # Flag is ONLY set to True AFTER successful db.create_all()
     # -------------------------------------------------------------------
     _db_initialized = False
 
     @app.before_request
     def ensure_db_initialized():
         nonlocal _db_initialized
+        # Skip if already initialized, in test mode, or on pure health check paths
         if _db_initialized or app.config.get('TESTING') or request.path in _HEALTH_EXEMPT_PATHS:
             return
-        _db_initialized = True
+        # Do NOT set _db_initialized = True here — only after success below
 
         db_uri = app.config.get('SQLALCHEMY_DATABASE_URI', '')
         if 'postgresql' in db_uri:
@@ -122,11 +148,44 @@ def create_app(config_name: str = 'default') -> Flask:
             print("  CONNECTED TO LOCAL DATABASE: SQLite (Testing/Development)")
             print("================================================================\n")
 
+        # Only mark as initialized if db.create_all() succeeds
+        if _init_database(app):
+            _db_initialized = True
+        else:
+            logger.error("Database initialization failed — will retry on next request.")
+
+    # -------------------------------------------------------------------
+    # RUNTIME ERROR RECOVERY — catches missing-table errors and auto-creates
+    # -------------------------------------------------------------------
+    from sqlalchemy.exc import ProgrammingError, OperationalError
+
+    @app.errorhandler(ProgrammingError)
+    def handle_programming_error(error):
+        """Auto-recover from missing tables (e.g. 'relation users does not exist')."""
+        nonlocal _db_initialized
+        logger.exception(f"ProgrammingError caught — attempting auto-recovery: {error}")
+        db.session.rollback()
         try:
-            db.create_all()
-            from migrations.init_db import seed as seed_db
-            seed_db(app)
-        except Exception as e:
-            logger.error(f"Deferred database initialization error: {e}")
+            _init_database(app)
+            _db_initialized = True
+            # Retry the original request by redirecting
+            return redirect(request.url)
+        except Exception as recovery_error:
+            logger.exception(f"Auto-recovery failed: {recovery_error}")
+            return "Internal Server Error — database tables could not be created. Check Render logs.", 500
+
+    @app.errorhandler(OperationalError)
+    def handle_operational_error(error):
+        """Auto-recover from connection or schema errors."""
+        nonlocal _db_initialized
+        logger.exception(f"OperationalError caught — attempting auto-recovery: {error}")
+        db.session.rollback()
+        try:
+            _init_database(app)
+            _db_initialized = True
+            return redirect(request.url)
+        except Exception as recovery_error:
+            logger.exception(f"Auto-recovery failed: {recovery_error}")
+            return "Internal Server Error — database connection failed. Check Render logs.", 500
 
     return app
