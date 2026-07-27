@@ -39,12 +39,14 @@ def dashboard():
     compliance_rate = round((actual_daily_logs / expected_daily_logs * 100), 1) if expected_daily_logs else 0
 
     db_uri = current_app.config.get('SQLALCHEMY_DATABASE_URI', '')
-    if 'postgresql' in db_uri:
+    engine_name = getattr(db.engine, 'name', '') if hasattr(db, 'engine') else ''
+    if 'postgresql' in db_uri or 'postgres' in engine_name:
         db_backend = "PostgreSQL (Neon Cloud Vault)"
         db_status = "Permanent Cloud Vault Active"
     else:
         db_backend = "SQLite (Local Dev Storage)"
         db_status = "Local Standalone Mode"
+
 
 
     return render_template('director/dashboard.html',
