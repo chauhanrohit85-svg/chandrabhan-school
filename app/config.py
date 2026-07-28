@@ -35,7 +35,7 @@ class Config:
             for key in sorted(os.environ.keys()):
                 print(f"  - {key}")
             print("==========================================================================\n")
-            raise RuntimeError("DATABASE_URL missing! Refusing to start in temporary SQLite mode on Render.")
+            raise RuntimeError("CRITICAL: DATABASE_URL missing! Refusing to run in temporary SQLite mode.")
 
         if url:
             # Fix Heroku/Render legacy postgres:// scheme

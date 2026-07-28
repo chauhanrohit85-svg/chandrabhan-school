@@ -66,7 +66,7 @@ def create_app(config_name: str = 'default') -> Flask:
         for key in sorted(os.environ.keys()):
             print(f"  - {key}")
         print("==========================================================================\n")
-        raise RuntimeError("DATABASE_URL missing! Refusing to start in temporary SQLite mode on Render.")
+        raise RuntimeError("CRITICAL: DATABASE_URL missing! Refusing to run in temporary SQLite mode.")
 
     # Explicitly map SQLALCHEMY_DATABASE_URI from os.environ.get('DATABASE_URL') if present
     if env_db_url:
@@ -139,13 +139,19 @@ def create_app(config_name: str = 'default') -> Flask:
                 cursor.execute('PRAGMA synchronous=NORMAL')
                 cursor.close()
 
-    # Inject school config into all templates
+    # Inject school config and database status into all templates
     @app.context_processor
     def inject_globals():
+        db_uri = app.config.get('SQLALCHEMY_DATABASE_URI', '')
+        engine_name = getattr(db.engine, 'name', '') if hasattr(db, 'engine') else ''
+        db_engine_name = 'postgresql' if ('postgresql' in db_uri or 'postgres' in engine_name) else 'sqlite'
         return {
             'school_name': app.config.get('SCHOOL_NAME', 'Chandrabhan Singh Public School'),
             'academic_year': app.config.get('ACADEMIC_YEAR', '2026-27'),
+            'db_engine_name': db_engine_name,
+            'is_render_env': bool(os.environ.get('RENDER') or os.environ.get('RENDER_SERVICE_ID')),
         }
+
 
     # Register blueprints
     from app.auth import auth_bp

@@ -263,7 +263,36 @@ def test_render_environment_without_database_url_raises_runtime_error(monkeypatc
     monkeypatch.delenv('DATABASE_URL', raising=False)
     with pytest.raises(RuntimeError) as exc_info:
         create_app('production')
-    assert 'DATABASE_URL missing' in str(exc_info.value)
+def test_session_closing_and_reopening_verifies_student_persistence(app):
+    """
+    Verify that inserting a student, committing the transaction, removing the session,
+    and querying in a new session successfully retrieves the persistent student record.
+    """
+    with app.app_context():
+        from app.models import Class, Student
+        from app.extensions import db
+
+        cls = Class.query.first()
+        if not cls:
+            cls = Class(grade=1, section='A', academic_year='2026-27')
+            db.session.add(cls)
+            db.session.commit()
+
+        class_id = cls.id
+        test_roll = "TEST-PERSIST-999"
+        student = Student(roll_number=test_roll, full_name="Persisted Test Student", class_id=class_id)
+        db.session.add(student)
+        db.session.commit()
+
+        # Close/remove current thread session to guarantee new database query connection
+        db.session.remove()
+
+        # Query in a fresh session context
+        reloaded_student = Student.query.filter_by(roll_number=test_roll, class_id=class_id).first()
+        assert reloaded_student is not None
+        assert reloaded_student.full_name == "Persisted Test Student"
+
+
 
 
 

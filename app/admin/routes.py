@@ -687,12 +687,18 @@ def add_student():
     if Student.query.filter_by(roll_number=roll, class_id=class_id).first():
         flash(f'Roll number {roll} already exists in this class.', 'warning')
     else:
-        student = Student(roll_number=roll, full_name=name,
-                          class_id=class_id, parent_contact=contact)
-        db.session.add(student)
-        db.session.commit()
-        flash(f'Student {name} added successfully.', 'success')
+        try:
+            student = Student(roll_number=roll, full_name=name,
+                              class_id=class_id, parent_contact=contact)
+            db.session.add(student)
+            db.session.commit()
+            flash(f'Student {name} added successfully.', 'success')
+        except Exception as e:
+            db.session.rollback()
+            current_app.logger.exception(f"Database save failed: {e}")
+            flash(f'Database save failed: {str(e)}', 'danger')
     return redirect(url_for('admin.students'))
+
 
 
 def _promote_single_class(cls, target_year):
