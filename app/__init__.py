@@ -22,6 +22,7 @@ _HEALTH_EXEMPT_PATHS = frozenset(('/health', '/api/health'))
 
 import time
 
+
 def _init_database(app):
     """
     Safely create all database tables and seed master accounts.
@@ -36,8 +37,10 @@ def _init_database(app):
                 logger.info(f"db.create_all() completed successfully on attempt {attempt}.")
                 from migrations.init_db import seed as seed_db
                 seed_db(app)
+                app.config['POSTGRES_ERROR'] = None
                 return True
         except Exception as e:
+            app.config['POSTGRES_ERROR'] = str(e)
             logger.exception(f"Database schema initialization attempt {attempt}/{retries} error: {e}")
             if attempt < retries:
                 time.sleep(1)
@@ -105,13 +108,10 @@ def create_app(config_name: str = 'default') -> Flask:
             try:
                 import psycopg  # noqa: F401
             except ImportError:
+                app.config['POSTGRES_ERROR'] = "PostgreSQL driver (psycopg2) not installed in local environment."
                 logger.warning("PostgreSQL URI configured but psycopg2 driver not installed in local environment. Falling back to SQLite.")
                 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:' if app.config.get('TESTING') else f"sqlite:///{BASE_DIR / 'instance' / 'school.db'}"
                 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {'connect_args': {'check_same_thread': False}}
-
-
-
-
 
     # Ensure instance folder exists
     os.makedirs(app.instance_path, exist_ok=True)
@@ -119,10 +119,6 @@ def create_app(config_name: str = 'default') -> Flask:
     # Initialize extensions AFTER app.config['SQLALCHEMY_DATABASE_URI'] has been set
     db.init_app(app)
     login_manager.init_app(app)
-
-
-
-
 
     # Enable SQLite WAL mode for concurrent writes
     if 'sqlite' in app.config.get('SQLALCHEMY_DATABASE_URI', ''):
@@ -150,8 +146,8 @@ def create_app(config_name: str = 'default') -> Flask:
             'academic_year': app.config.get('ACADEMIC_YEAR', '2026-27'),
             'db_engine_name': db_engine_name,
             'is_render_env': bool(os.environ.get('RENDER') or os.environ.get('RENDER_SERVICE_ID')),
+            'postgres_error': app.config.get('POSTGRES_ERROR'),
         }
-
 
     # Register blueprints
     from app.auth import auth_bp
@@ -200,7 +196,6 @@ def create_app(config_name: str = 'default') -> Flask:
             _init_database(app)
         return redirect(url_for('auth.login'))
 
-
     # -------------------------------------------------------------------
     # LAZY DATABASE INITIALIZATION — runs on first real request
     # Flag is ONLY set to True AFTER successful db.create_all()
@@ -210,10 +205,38 @@ def create_app(config_name: str = 'default') -> Flask:
     @app.before_request
     def ensure_db_initialized():
         nonlocal _db_initialized
-        # Skip if already initialized, in test mode, or on pure health check paths
-        if _db_initialized or app.config.get('TESTING') or request.path in _HEALTH_EXEMPT_PATHS:
+        if app.config.get('TESTING') or request.path in _HEALTH_EXEMPT_PATHS:
             return
-        # Do NOT set _db_initialized = True here — only after success below
+
+        # Force re-attempting PostgreSQL connection on request if DATABASE_URL is present
+        env_url = (os.environ.get('DATABASE_URL') or '').strip().rstrip('/')
+        if env_url and 'sqlite' in app.config.get('SQLALCHEMY_DATABASE_URI', ''):
+            if env_url.startswith('postgres://'):
+                env_url = env_url.replace('postgres://', 'postgresql://', 1)
+            parsed = urlparse(env_url)
+            if parsed.query:
+                params = parse_qs(parsed.query)
+                params.pop('sslmode', None)
+                clean_query = urlencode(params, doseq=True)
+                env_url = urlunparse(parsed._replace(query=clean_query))
+
+            try:
+                import psycopg2  # noqa: F401
+                app.config['SQLALCHEMY_DATABASE_URI'] = env_url
+                app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+                    'pool_pre_ping': True,
+                    'pool_recycle': 300,
+                    'pool_timeout': 30,
+                    'pool_size': 5,
+                    'max_overflow': 10,
+                    'connect_args': {'sslmode': 'require'}
+                }
+                _db_initialized = False
+            except ImportError:
+                pass
+
+        if _db_initialized:
+            return
 
         db_uri = app.config.get('SQLALCHEMY_DATABASE_URI', '')
         if 'postgresql' in db_uri:
