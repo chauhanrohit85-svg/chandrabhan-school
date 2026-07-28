@@ -42,7 +42,7 @@ def dashboard():
     engine_name = getattr(db.engine, 'name', '') if hasattr(db, 'engine') else ''
     if 'postgresql' in db_uri or 'postgres' in engine_name:
         db_backend = "PostgreSQL (Neon Cloud Vault)"
-        db_status = "Permanent Cloud Vault Active"
+        db_status = "Permanent Cloud Storage Active"
     else:
         db_backend = "SQLite (Local Dev Storage)"
         db_status = "Local Standalone Mode"
@@ -159,8 +159,11 @@ def backup():
     engine_name = getattr(db.engine, 'name', '') if hasattr(db, 'engine') else ''
     if 'postgresql' in db_uri or 'postgres' in engine_name:
         db_backend = "PostgreSQL (Neon Cloud Vault)"
+        db_status = "Permanent Cloud Storage Active"
     else:
         db_backend = "SQLite (Local Dev Storage)"
+        db_status = "Local Standalone Mode"
+
 
 
     stats = {

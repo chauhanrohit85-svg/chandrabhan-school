@@ -54,8 +54,21 @@ def create_app(config_name: str = 'default') -> Flask:
         logger.exception(f"Config loading error: {e}. Falling back to default config.")
         app.config.from_object(Config)
 
-    # Explicitly map SQLALCHEMY_DATABASE_URI from os.environ.get('DATABASE_URL') if present
+    # Check if running on Render and enforce DATABASE_URL presence
+    is_render = bool(os.environ.get('RENDER') or os.environ.get('RENDER_SERVICE_ID'))
     env_db_url = (os.environ.get('DATABASE_URL') or '').strip().rstrip('/')
+
+    if is_render and not env_db_url:
+        logger.critical("CRITICAL ERROR: DATABASE_URL is NOT set in Render Environment Variables!")
+        print("\n==========================================================================")
+        print("CRITICAL ERROR: DATABASE_URL is NOT set in Render Environment Variables!")
+        print("Available Environment Variable Keys:")
+        for key in sorted(os.environ.keys()):
+            print(f"  - {key}")
+        print("==========================================================================\n")
+        raise RuntimeError("DATABASE_URL missing! Refusing to start in temporary SQLite mode on Render.")
+
+    # Explicitly map SQLALCHEMY_DATABASE_URI from os.environ.get('DATABASE_URL') if present
     if env_db_url:
         if env_db_url.startswith('postgres://'):
             env_db_url = env_db_url.replace('postgres://', 'postgresql://', 1)
@@ -66,6 +79,14 @@ def create_app(config_name: str = 'default') -> Flask:
             clean_query = urlencode(params, doseq=True)
             env_db_url = urlunparse(parsed._replace(query=clean_query))
         app.config['SQLALCHEMY_DATABASE_URI'] = env_db_url
+        app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+            'pool_pre_ping': True,
+            'pool_recycle': 300,
+            'pool_timeout': 30,
+            'pool_size': 5,
+            'max_overflow': 10,
+            'connect_args': {'sslmode': 'require'}
+        }
 
     # Fallback check: verify app.config['SQLALCHEMY_DATABASE_URI'] is NEVER None or empty
     if not app.config.get('SQLALCHEMY_DATABASE_URI'):
@@ -87,6 +108,7 @@ def create_app(config_name: str = 'default') -> Flask:
                 logger.warning("PostgreSQL URI configured but psycopg2 driver not installed in local environment. Falling back to SQLite.")
                 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:' if app.config.get('TESTING') else f"sqlite:///{BASE_DIR / 'instance' / 'school.db'}"
                 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {'connect_args': {'check_same_thread': False}}
+
 
 
 

@@ -23,8 +23,20 @@ class Config:
         """
         Auto-switch to PostgreSQL or custom SQLite path if configured (Render cloud).
         Safely strips sslmode from query string to avoid conflicts with connect_args.
+        Hard crashes if running on Render and DATABASE_URL is missing.
         """
         url = (os.environ.get('DATABASE_URL') or '').strip().rstrip('/')
+        is_render = bool(os.environ.get('RENDER') or os.environ.get('RENDER_SERVICE_ID'))
+
+        if is_render and not url:
+            print("\n==========================================================================")
+            print("CRITICAL ERROR: DATABASE_URL is NOT set in Render Environment Variables!")
+            print("Available Environment Variable Keys:")
+            for key in sorted(os.environ.keys()):
+                print(f"  - {key}")
+            print("==========================================================================\n")
+            raise RuntimeError("DATABASE_URL missing! Refusing to start in temporary SQLite mode on Render.")
+
         if url:
             # Fix Heroku/Render legacy postgres:// scheme
             if url.startswith('postgres://'):
@@ -43,6 +55,7 @@ class Config:
         if sqlite_path:
             return f"sqlite:///{sqlite_path}"
         return f"sqlite:///{BASE_DIR / 'instance' / 'school.db'}"
+
 
 
 def _get_engine_options(is_dev=False):

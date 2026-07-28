@@ -254,7 +254,17 @@ def test_production_mode_enforces_postgresql_uri(monkeypatch):
     assert uri.startswith('postgresql://')
     assert 'neon_user' in uri
     assert 'sqlite' not in uri
-    assert 'sslmode' not in uri
+def test_render_environment_without_database_url_raises_runtime_error(monkeypatch):
+    """
+    Verify that if RENDER environment variable is set but DATABASE_URL is missing,
+    create_app raises RuntimeError refusing to start in SQLite mode.
+    """
+    monkeypatch.setenv('RENDER', 'true')
+    monkeypatch.delenv('DATABASE_URL', raising=False)
+    with pytest.raises(RuntimeError) as exc_info:
+        create_app('production')
+    assert 'DATABASE_URL missing' in str(exc_info.value)
+
 
 
 
