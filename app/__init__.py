@@ -20,6 +20,7 @@ school records silently.
 import os
 import time
 import secrets
+import hashlib
 import logging
 
 from flask import Flask, jsonify, redirect, url_for, render_template, render_template_string
@@ -67,6 +68,65 @@ def _init_schema(app):
         db.create_all()
         from migrations.init_db import seed as seed_db
         seed_db(app)
+
+
+def _apply_bootstrap_password_overrides(app):
+    """
+    Recover a lost master password by setting an environment variable.
+
+    A school with no technical administrator needs a way back in that does not
+    involve reading deploy logs. Setting BOOTSTRAP_DIRECTOR_PASSWORD (or the
+    admin/teacher equivalents) resets that account on the next start.
+
+    Each applied value is fingerprinted and remembered, so the same variable is
+    only acted on once. Without that, leaving the variable in place would silently
+    undo a password the user later changed in the app, on every redeploy.
+    """
+    from app.models import AppSetting, User
+
+    overrides = [
+        ('director', os.environ.get('BOOTSTRAP_DIRECTOR_PASSWORD', '').strip()),
+        ('principal', os.environ.get('BOOTSTRAP_ADMIN_PASSWORD', '').strip()),
+    ]
+    teacher_password = os.environ.get('BOOTSTRAP_TEACHER_PASSWORD', '').strip()
+    if teacher_password:
+        overrides += [(f'teacher{n}', teacher_password) for n in range(1, 6)]
+
+    applied = []
+    with app.app_context():
+        for username, password in overrides:
+            if not password:
+                continue
+
+            marker_key = f'bootstrap_pw:{username}'
+            fingerprint = hashlib.sha256(password.encode('utf-8')).hexdigest()
+            marker = db.session.get(AppSetting, marker_key)
+            if marker and marker.value == fingerprint:
+                continue  # already applied once; leave any later change alone
+
+            user = User.query.filter_by(username=username).first()
+            if not user:
+                continue
+
+            try:
+                user.set_password(password)
+                if marker:
+                    marker.value = fingerprint
+                else:
+                    db.session.add(AppSetting(key=marker_key, value=fingerprint))
+                db.session.commit()
+                applied.append(username)
+            except Exception:
+                db.session.rollback()
+                logger.exception(f'Could not apply the bootstrap password for {username}')
+
+    if applied:
+        logger.warning(
+            f"Applied bootstrap password overrides for: {', '.join(applied)}. "
+            'Sign in, change the password in the app, then remove the '
+            'BOOTSTRAP_*_PASSWORD variables from the environment.'
+        )
+    return applied
 
 
 def _load_or_create_secret_key(app):
@@ -166,9 +226,10 @@ def create_app(config_name: str = 'default') -> Flask:
             app.config['DB_ENGINE_NAME'] = _verify_connection(app)
             _init_schema(app)
 
-            # Needs the schema to exist, so it happens after _init_schema.
+            # Both need the schema to exist, so they happen after _init_schema.
             if not env_secret:
                 app.config['SECRET_KEY'] = _load_or_create_secret_key(app)
+            _apply_bootstrap_password_overrides(app)
 
             logger.info(f"Database ready: {app.config['DB_ENGINE_NAME']}")
         except Exception as exc:
