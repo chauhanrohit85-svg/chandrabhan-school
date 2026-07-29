@@ -43,6 +43,68 @@ def test_csrf_rejects_post_without_token(monkeypatch, tmp_path):
     assert resp.status_code == 400, 'POST without a CSRF token should be rejected'
 
 
+def _csrf_app(monkeypatch, tmp_path, name):
+    """A real app with CSRF protection switched on, as production runs it."""
+    monkeypatch.delenv('DATABASE_URL', raising=False)
+    monkeypatch.delenv('RENDER', raising=False)
+    monkeypatch.delenv('RENDER_SERVICE_ID', raising=False)
+    monkeypatch.setenv('SQLITE_DB_PATH', str(tmp_path / f'{name}.db'))
+
+    application = create_app('development')
+    application.config['WTF_CSRF_ENABLED'] = True
+    csrf.init_app(application)
+    return application
+
+
+def test_https_post_works_without_a_referrer_header(monkeypatch, tmp_path):
+    """
+    Regression: login was impossible over HTTPS whenever the Referer header was
+    absent.
+
+    Flask-WTF's WTF_CSRF_SSL_STRICT demands a Referer on secure requests and
+    answers "The referrer header is missing." otherwise. Privacy settings,
+    extensions and school proxies all strip that header, so staff could not sign
+    in at all. The CSRF token itself must remain the thing that is checked.
+    """
+    import re
+
+    application = _csrf_app(monkeypatch, tmp_path, 'referrer')
+    client = application.test_client()
+
+    # base_url makes Flask treat this as a secure request, which is what turns
+    # the strict referrer check on.
+    page = client.get('/auth/login', base_url='https://localhost').get_data(as_text=True)
+    token = re.search(r'name="csrf_token" value="([^"]+)"', page).group(1)
+
+    resp = client.post('/auth/login',
+                       data={'username': 'nobody', 'password': 'wrong', 'csrf_token': token},
+                       base_url='https://localhost')      # deliberately no Referer
+
+    assert resp.status_code != 400, 'a valid token was rejected for lacking a referrer'
+    assert b'referrer header is missing' not in resp.data
+
+
+def test_ssl_strict_referrer_check_is_disabled(app):
+    assert app.config.get('WTF_CSRF_SSL_STRICT') is False
+
+
+def test_missing_token_shows_a_readable_page(monkeypatch, tmp_path):
+    """
+    A rejected form must explain itself. The default is a bare
+    "400 Bad Request: The CSRF token is missing", which reads as a broken site
+    to the teachers and office staff who use this.
+    """
+    application = _csrf_app(monkeypatch, tmp_path, 'friendly')
+    resp = application.test_client().post(
+        '/auth/login', data={'username': 'nobody', 'password': 'wrong'})
+
+    assert resp.status_code == 400
+    body = resp.get_data(as_text=True)
+    assert 'This page was open too long' in body
+    assert 'nothing was lost' in body
+    assert 'Go to the login page' in body
+
+
 def test_every_post_form_carries_a_csrf_token():
     """Each POST form in the templates must render a csrf_token field."""
     import pathlib

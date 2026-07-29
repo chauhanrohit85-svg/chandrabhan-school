@@ -131,6 +131,15 @@ class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY', 'dev-secret-key-CHANGE-IN-PRODUCTION')
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     WTF_CSRF_ENABLED = True
+
+    # Over HTTPS, Flask-WTF additionally demands a Referer header and rejects the
+    # request with "The referrer header is missing." if it is absent. Plenty of
+    # ordinary setups strip that header — privacy settings, browser extensions,
+    # school or office proxies — and the result is a teacher who simply cannot
+    # sign in, with an error nobody outside software could interpret.
+    # The CSRF token itself is unaffected and still required on every POST, and
+    # session cookies remain SameSite=Lax, so cross-site form posts stay blocked.
+    WTF_CSRF_SSL_STRICT = False
     SCHOOL_NAME = os.environ.get('SCHOOL_NAME', 'Chandrabhan Singh Public School')
     ACADEMIC_YEAR = os.environ.get('ACADEMIC_YEAR', '2026-27')
     ALERT_THRESHOLD = float(os.environ.get('ALERT_THRESHOLD', '2.0'))

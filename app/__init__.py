@@ -22,7 +22,7 @@ import time
 import secrets
 import logging
 
-from flask import Flask, jsonify, redirect, url_for, render_template_string
+from flask import Flask, jsonify, redirect, url_for, render_template, render_template_string
 from flask_login import current_user
 from sqlalchemy import text
 
@@ -239,6 +239,23 @@ def create_app(config_name: str = 'default') -> Flask:
             if current_user.role == 'teacher':
                 return redirect(url_for('teacher.dashboard'))
         return redirect(url_for('auth.login'))
+
+    # ── Expired / rejected form submissions ───────────────────────────────
+    from flask_wtf.csrf import CSRFError
+
+    @app.errorhandler(CSRFError)
+    def handle_csrf_error(error):
+        """
+        Explain an expired form in words a teacher can act on.
+
+        The default is a bare "400 Bad Request — The CSRF token is missing",
+        which reads as a broken site rather than "your page went stale, open it
+        again". The usual causes are a page left open for hours or one restored
+        from the browser cache after a deploy.
+        """
+        logger.info(f'Rejected a stale form submission: {error.description}')
+        return render_template('errors/session_expired.html',
+                               reason=error.description), 400
 
     # ── Database error handling ───────────────────────────────────────────
     from sqlalchemy.exc import SQLAlchemyError
