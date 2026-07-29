@@ -39,6 +39,7 @@
       </div>
       <div class="card-body">
         <form method="POST" action="{{ url_for('teacher.add_student') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
           <div style="display:grid; grid-template-columns:1fr 2fr; gap:10px; margin-bottom:12px;">
             <div>
               <label class="form-label" style="font-size:12px;">Roll No.</label>

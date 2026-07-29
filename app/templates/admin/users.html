@@ -50,6 +50,7 @@
               <div style="display:flex;gap:6px;">
                 <a href="{{ url_for('admin.edit_user', user_id=t.id) }}" class="btn btn-outline btn-sm">✏️ Edit</a>
                 <form action="{{ url_for('admin.toggle_user', user_id=t.id) }}" method="POST" style="display:inline;">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
                   <button type="submit" class="btn btn-sm" style="background:#f1f5f9;color:#475569;border:none;cursor:pointer;min-height:36px;">
                     {{ '🚫 Deactivate' if t.is_active else '✅ Activate' }}
                   </button>
@@ -72,6 +73,7 @@
     </div>
     <div class="card-body">
       <form method="POST" action="{{ url_for('admin.add_user') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
         <div class="form-group">
           <label class="form-label">Full Name</label>
           <input type="text" name="full_name" class="form-control" placeholder="e.g. Mrs. Priya Sharma" required />

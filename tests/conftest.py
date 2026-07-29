@@ -3,6 +3,7 @@ Pytest configuration and shared fixtures for all tests.
 Uses an in-memory SQLite database — no file system state between runs.
 """
 import pytest
+from flask import g
 from app import create_app
 from app.extensions import db as _db
 from app.models import User, Class, Student, TeacherDailyLog, AttendanceRecord, PillarScore
@@ -12,6 +13,23 @@ from app.models import User, Class, Student, TeacherDailyLog, AttendanceRecord, 
 def app():
     """Create application with testing config."""
     application = create_app('testing')
+
+    @application.before_request
+    def _isolate_login_state():
+        """
+        Stop flask_login state leaking between tests.
+
+        The session-scoped app context below stays pushed for the whole run, and
+        Flask reuses an already-pushed context rather than creating a new one per
+        request. That makes a single flask.g live for the entire suite, so
+        flask_login's cached `_login_user` survived from one test's client into
+        the next — an unauthenticated client would still see the previously
+        logged-in teacher, and any "requires login" assertion silently passed for
+        the wrong reason. Clearing the cache forces each request to resolve its
+        user from its own session cookie, as it does in production.
+        """
+        g.pop('_login_user', None)
+
     with application.app_context():
         _db.create_all()
         _seed_test_data()
@@ -23,6 +41,24 @@ def app():
 @pytest.fixture(scope='session')
 def db(app):
     return _db
+
+
+@pytest.fixture()
+def fake_pg_driver(monkeypatch):
+    """
+    Pretend a PostgreSQL driver is importable.
+
+    resolve_database_uri() refuses to hand back a PostgreSQL URI when no driver
+    can be imported — that refusal is the fix for the production SQLite
+    fallback. Tests that only exercise URI parsing should not need psycopg2
+    installed on the developer machine.
+    """
+    # `import app.config` binds the `config` DICT that app/__init__.py re-exports,
+    # not the module, so fetch the real module object explicitly.
+    import importlib
+    config_module = importlib.import_module('app.config')
+    monkeypatch.setattr(config_module, 'postgres_driver_available',
+                        lambda: (True, 'psycopg2 (stubbed for tests)'))
 
 
 # ── Client fixtures — function scope so each test gets a fresh session ──

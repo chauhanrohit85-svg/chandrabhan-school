@@ -19,6 +19,12 @@
   let isOnline = navigator.onLine;
   let syncInProgress = false;
 
+  /** Read the per-session CSRF token that base.html publishes in a meta tag. */
+  function csrfToken() {
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    return meta ? meta.getAttribute('content') : '';
+  }
+
   /** Update online status indicator in the UI */
   function updateStatusUI(online) {
     const indicator = document.getElementById('online-status');
@@ -76,7 +82,13 @@
       try {
         const resp = await fetch(endpoint, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            // CSRF protection is enforced on every POST, including these
+            // background sync calls. Flask-WTF accepts the token from this
+            // header when there is no form field to carry it.
+            'X-CSRFToken': csrfToken(),
+          },
           body: JSON.stringify(item.payload),
           signal: AbortSignal.timeout(10000),
         });

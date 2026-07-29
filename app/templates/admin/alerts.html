@@ -48,6 +48,7 @@
             {% endif %}
           </div>
           <form action="{{ url_for('admin.resolve_alert', alert_id=alert.id) }}" method="POST">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
             <button type="submit" class="btn btn-success btn-sm">✓ Resolve</button>
           </form>
         </div>
@@ -58,6 +59,7 @@
             🛠️ Quick Log Remedial Action Taken:
           </div>
           <form action="{{ url_for('admin.record_intervention', alert_id=alert.id) }}" method="POST" style="display:flex; flex-wrap:wrap; gap:6px; align-items:center;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
             <button type="submit" name="action_tag" value="Remedial Homework Given" class="btn btn-outline btn-sm" style="font-size:11px; padding:2px 8px; background:white;">+ Remedial Homework Given</button>
             <button type="submit" name="action_tag" value="1-on-1 Practice" class="btn btn-outline btn-sm" style="font-size:11px; padding:2px 8px; background:white;">+ 1-on-1 Practice</button>
             <button type="submit" name="action_tag" value="Parent Notified" class="btn btn-outline btn-sm" style="font-size:11px; padding:2px 8px; background:white;">+ Parent Notified</button>

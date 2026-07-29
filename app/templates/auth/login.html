@@ -47,7 +47,7 @@
     {% endwith %}
 
     <form method="POST" action="{{ url_for('auth.login') }}" id="login-form" autocomplete="on">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}" />
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
 
       <div class="login-field">
         <label for="username">Username</label>
@@ -75,11 +75,10 @@
       </button>
     </form>
 
-    <!-- Default credentials hint (remove in production) -->
+    {# Credentials are never printed on the sign-in page. Bootstrap passwords are
+       generated at first run and shown once in the deploy log. #}
     <div class="role-hint">
-      <p style="font-weight:600;color:#64748b;margin-bottom:6px;">Default Credentials</p>
-      <p>Admin: <code>principal</code> / <code>admin123</code></p>
-      <p style="margin-top:4px;">Teacher demo: <code>teacher1</code> / <code>teacher123</code></p>
+      <p style="font-weight:600;color:#64748b;">Forgotten your password? Ask the Principal to reset it.</p>
     </div>
   </div>
 

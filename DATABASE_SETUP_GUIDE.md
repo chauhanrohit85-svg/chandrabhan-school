@@ -54,10 +54,46 @@ Render also offers PostgreSQL databases directly inside the Render dashboard:
 
 ---
 
+## 🩺 Troubleshooting: "data disappears after a restart"
+
+That symptom means the app is running on SQLite, not PostgreSQL. Check in this order.
+
+**1. Confirm what the app is actually using.**
+Open `https://<your-app>.onrender.com/health/db`. You want:
+```json
+{"status": "ok", "engine": "postgresql", "permanent": true}
+```
+Anything else means writes are not permanent. Director → **Storage Diagnostics**
+shows the same thing plus the last database error.
+
+**2. If the deploy fails to start, read the log.** The app now refuses to boot
+rather than falling back to SQLite, and prints the exact reason:
+
+| Log message | Cause | Fix |
+|---|---|---|
+| `DATABASE_URL is not set` | env var missing from the service | Add it under Render → Environment |
+| `no PostgreSQL driver could be imported` | `psycopg2` will not import for the running Python | Keep `.python-version` pinned; `psycopg2-binary` has no wheels for Python 3.13 |
+| `must be a PostgreSQL URL` | the value is not a `postgres://` / `postgresql://` URL | Paste the full Neon connection string |
+| `Could not establish the PostgreSQL connection` | Neon unreachable after 5 retries | Check the Neon project is not suspended, and that the password in the URL is current |
+| `SECRET_KEY is not set` | env var missing | Add a long random `SECRET_KEY` |
+
+**3. Verify persistence end to end.** Note the row counts on Storage
+Diagnostics, add a student, trigger a manual redeploy, then reload the page. On
+PostgreSQL the count stays up by one.
+
+> **Why this used to fail silently:** Flask-SQLAlchemy builds the database engine
+> inside `db.init_app(app)`. Older code tried to re-bind PostgreSQL from a
+> `@before_request` hook, which changes the config but not the already-built
+> engine — so the app kept writing to SQLite while the dashboard badge claimed
+> PostgreSQL. The URI is now resolved once, before `init_app`, and every status
+> badge reads the live engine instead of the config string.
+
+---
+
 ## 💾 Local Backup & Restore System
 
 Inside the application, management can also perform **one-click offline backups** at any time:
-1. Log in as Director (`director` / `director123`).
+1. Log in as Director.
 2. Click **System Backup & Restore** (`/director/backup`).
 3. Click **Download Full School Backup (.json)** to save a timestamped snapshot of all rosters, logs, and attendance history to your local computer.
 4. If you ever switch database providers, upload the backup file via **Upload & Restore School Data** to restore all records instantly!

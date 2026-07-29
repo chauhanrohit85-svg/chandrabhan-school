@@ -1,127 +1,105 @@
 """
 Flask application factory.
-Registers all blueprints, extensions, and SQLite WAL mode.
-Defers database initialization to @app.before_request for immediate Gunicorn port binding.
-Crash-proof: create_app() and all imports are wrapped so Gunicorn never exits on config errors.
-Auto-recovers from missing tables by catching ProgrammingError/OperationalError.
+
+Database binding order matters and is not negotiable:
+
+    1. resolve_database_uri()  -> decide the URI and engine options
+    2. app.config[...] = ...   -> write them into config
+    3. db.init_app(app)        -> Flask-SQLAlchemy BUILDS THE ENGINE HERE
+
+Anything that changes SQLALCHEMY_DATABASE_URI after step 3 does not affect the
+live engine. Flask-SQLAlchemy 3.x creates and caches engines inside init_app().
+A previous version of this file tried to re-bind PostgreSQL from a
+@before_request hook; that could never have worked, and it is why production
+kept writing to SQLite while the config claimed otherwise.
+
+There is no SQLite fallback in production. If PostgreSQL cannot be reached the
+app refuses to start, because accepting writes into ephemeral storage loses
+school records silently.
 """
 import os
+import time
 import logging
-from flask import Flask, jsonify, request, redirect, url_for
+
+from flask import Flask, jsonify, redirect, url_for, render_template_string
 from flask_login import current_user
-from app.extensions import db, login_manager
-from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
-from app.config import config, Config, _get_engine_options, BASE_DIR
+from sqlalchemy import text
+
+from app.extensions import db, login_manager, csrf
+from app.config import config, resolve_database_uri, DatabaseConfigError, is_managed_host
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')
 logger = logging.getLogger(__name__)
 
-# Only /health is exempt — it never touches the database at all
-_HEALTH_EXEMPT_PATHS = frozenset(('/health', '/api/health'))
+CONNECT_RETRIES = 5
+CONNECT_BACKOFF_SECONDS = 3
 
 
-import time
-
-
-def _init_database(app):
+def _verify_connection(app):
     """
-    Safely create all database tables and seed master accounts.
-    Retries up to 3 times if PostgreSQL experiences connection latency on boot.
-    Returns True on success, False on failure.
+    Open a real connection and run SELECT 1.
+
+    Neon's serverless PostgreSQL can be cold, so transient failures are retried
+    with a bounded backoff. Returns the live engine name (e.g. 'postgresql').
+    Raises the final exception if every attempt fails.
     """
-    retries = 3
-    for attempt in range(1, retries + 1):
+    last_error = None
+    for attempt in range(1, CONNECT_RETRIES + 1):
         try:
             with app.app_context():
-                db.create_all()
-                logger.info(f"db.create_all() completed successfully on attempt {attempt}.")
-                from migrations.init_db import seed as seed_db
-                seed_db(app)
-                app.config['POSTGRES_ERROR'] = None
-                return True
-        except Exception as e:
-            app.config['POSTGRES_ERROR'] = str(e)
-            logger.exception(f"Database schema initialization attempt {attempt}/{retries} error: {e}")
-            if attempt < retries:
-                time.sleep(1)
-    return False
+                with db.engine.connect() as conn:
+                    conn.execute(text('SELECT 1'))
+                engine_name = db.engine.name
+            logger.info(f'Database reachable on attempt {attempt}: engine={engine_name}')
+            return engine_name
+        except Exception as exc:
+            last_error = exc
+            logger.warning(f'Database connection attempt {attempt}/{CONNECT_RETRIES} failed: {exc}')
+            if attempt < CONNECT_RETRIES:
+                time.sleep(CONNECT_BACKOFF_SECONDS)
+    raise last_error
+
+
+def _init_schema(app):
+    """Create any missing tables and seed master accounts. Never drops data."""
+    with app.app_context():
+        db.create_all()
+        from migrations.init_db import seed as seed_db
+        seed_db(app)
 
 
 def create_app(config_name: str = 'default') -> Flask:
     app = Flask(__name__, instance_relative_config=True)
+    app.config.from_object(config.get(config_name, config['default']))
 
-    # Load configuration
-    try:
-        app.config.from_object(config[config_name])
-    except Exception as e:
-        logger.exception(f"Config loading error: {e}. Falling back to default config.")
-        app.config.from_object(Config)
+    # ── Secret key ────────────────────────────────────────────────────────
+    # Read the environment directly rather than trusting the config class
+    # attribute, which is evaluated once at import time and so would miss a
+    # value set afterwards. A predictable secret lets anyone forge a session
+    # cookie and sign in as the director, so it is required off the dev machine.
+    env_secret = os.environ.get('SECRET_KEY', '').strip()
+    if env_secret:
+        app.config['SECRET_KEY'] = env_secret
+    elif is_managed_host():
+        raise RuntimeError(
+            'SECRET_KEY is not set, so the built-in development default would be used '
+            'and session cookies would be forgeable by anyone. Set SECRET_KEY in the '
+            'service environment variables to a long random string and redeploy.'
+        )
 
-    # Check if running on Render and enforce DATABASE_URL presence
-    is_render = bool(os.environ.get('RENDER') or os.environ.get('RENDER_SERVICE_ID'))
-    env_db_url = (os.environ.get('DATABASE_URL') or '').strip().rstrip('/')
+    # ── Database binding (must happen before db.init_app) ─────────────────
+    uri, engine_options = resolve_database_uri(config_name)
+    app.config['SQLALCHEMY_DATABASE_URI'] = uri
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = engine_options
 
-    if is_render and not env_db_url:
-        logger.critical("CRITICAL ERROR: DATABASE_URL is NOT set in Render Environment Variables!")
-        print("\n==========================================================================")
-        print("CRITICAL ERROR: DATABASE_URL is NOT set in Render Environment Variables!")
-        print("Available Environment Variable Keys:")
-        for key in sorted(os.environ.keys()):
-            print(f"  - {key}")
-        print("==========================================================================\n")
-        raise RuntimeError("CRITICAL: DATABASE_URL missing! Refusing to run in temporary SQLite mode.")
-
-    # Explicitly map SQLALCHEMY_DATABASE_URI from os.environ.get('DATABASE_URL') if present
-    if env_db_url:
-        if env_db_url.startswith('postgres://'):
-            env_db_url = env_db_url.replace('postgres://', 'postgresql://', 1)
-        parsed = urlparse(env_db_url)
-        if parsed.query:
-            params = parse_qs(parsed.query)
-            params.pop('sslmode', None)
-            clean_query = urlencode(params, doseq=True)
-            env_db_url = urlunparse(parsed._replace(query=clean_query))
-        app.config['SQLALCHEMY_DATABASE_URI'] = env_db_url
-        app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-            'pool_pre_ping': True,
-            'pool_recycle': 300,
-            'pool_timeout': 30,
-            'pool_size': 5,
-            'max_overflow': 10,
-            'connect_args': {'sslmode': 'require'}
-        }
-
-    # Fallback check: verify app.config['SQLALCHEMY_DATABASE_URI'] is NEVER None or empty
-    if not app.config.get('SQLALCHEMY_DATABASE_URI'):
-        app.config['SQLALCHEMY_DATABASE_URI'] = Config._db_uri()
-
-    # Ensure SQLALCHEMY_ENGINE_OPTIONS is populated
-    if not app.config.get('SQLALCHEMY_ENGINE_OPTIONS'):
-        app.config['SQLALCHEMY_ENGINE_OPTIONS'] = _get_engine_options()
-
-    # Driver check for local development: fall back to SQLite ONLY if PostgreSQL driver (psycopg2) is missing in environment
-    uri = app.config.get('SQLALCHEMY_DATABASE_URI', '')
-    if uri.startswith('postgresql'):
-        try:
-            import psycopg2  # noqa: F401
-        except ImportError:
-            try:
-                import psycopg  # noqa: F401
-            except ImportError:
-                app.config['POSTGRES_ERROR'] = "PostgreSQL driver (psycopg2) not installed in local environment."
-                logger.warning("PostgreSQL URI configured but psycopg2 driver not installed in local environment. Falling back to SQLite.")
-                app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:' if app.config.get('TESTING') else f"sqlite:///{BASE_DIR / 'instance' / 'school.db'}"
-                app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {'connect_args': {'check_same_thread': False}}
-
-    # Ensure instance folder exists
     os.makedirs(app.instance_path, exist_ok=True)
 
-    # Initialize extensions AFTER app.config['SQLALCHEMY_DATABASE_URI'] has been set
     db.init_app(app)
     login_manager.init_app(app)
+    csrf.init_app(app)
 
-    # Enable SQLite WAL mode for concurrent writes
-    if 'sqlite' in app.config.get('SQLALCHEMY_DATABASE_URI', ''):
+    # SQLite (local development) concurrency pragmas.
+    if uri.startswith('sqlite'):
         from sqlalchemy import event
         from sqlalchemy.engine import Engine
         import sqlite3
@@ -135,21 +113,7 @@ def create_app(config_name: str = 'default') -> Flask:
                 cursor.execute('PRAGMA synchronous=NORMAL')
                 cursor.close()
 
-    # Inject school config and database status into all templates
-    @app.context_processor
-    def inject_globals():
-        db_uri = app.config.get('SQLALCHEMY_DATABASE_URI', '')
-        engine_name = getattr(db.engine, 'name', '') if hasattr(db, 'engine') else ''
-        db_engine_name = 'postgresql' if ('postgresql' in db_uri or 'postgres' in engine_name) else 'sqlite'
-        return {
-            'school_name': app.config.get('SCHOOL_NAME', 'Chandrabhan Singh Public School'),
-            'academic_year': app.config.get('ACADEMIC_YEAR', '2026-27'),
-            'db_engine_name': db_engine_name,
-            'is_render_env': bool(os.environ.get('RENDER') or os.environ.get('RENDER_SERVICE_ID')),
-            'postgres_error': app.config.get('POSTGRES_ERROR'),
-        }
-
-    # Register blueprints
+    # ── Blueprints ────────────────────────────────────────────────────────
     from app.auth import auth_bp
     from app.admin import admin_bp
     from app.teacher import teacher_bp
@@ -164,128 +128,109 @@ def create_app(config_name: str = 'default') -> Flask:
     app.register_blueprint(api_bp)
     app.register_blueprint(director_bp)
 
-    # Force table creation and master account seeding on startup if DB is available
-    if not app.config.get('TESTING'):
-        _init_database(app)
+    # ── Connect and build the schema, once, at startup ────────────────────
+    # Gunicorn's master process binds the listening socket before forking
+    # workers, so doing this at import time does not delay port binding.
+    app.config['DB_ENGINE_NAME'] = 'unavailable'
+    app.config['DB_ERROR'] = None
 
-    # -------------------------------------------------------------------
-    # INSTANT HEALTH ENDPOINT — never touches the database
-    # -------------------------------------------------------------------
+    if not app.config.get('TESTING'):
+        try:
+            app.config['DB_ENGINE_NAME'] = _verify_connection(app)
+            _init_schema(app)
+            logger.info(f"Database ready: {app.config['DB_ENGINE_NAME']}")
+        except Exception as exc:
+            app.config['DB_ERROR'] = f'{type(exc).__name__}: {exc}'
+            logger.exception('Database initialisation failed.')
+            # On a managed host a broken database means every write would be
+            # lost. Fail the deploy rather than serve a portal that silently
+            # discards attendance and student records.
+            if is_managed_host():
+                raise DatabaseConfigError(
+                    f'Could not establish the PostgreSQL connection required in production.\n'
+                    f'  {app.config["DB_ERROR"]}'
+                ) from exc
+
+    # ── Template globals ──────────────────────────────────────────────────
+    @app.context_processor
+    def inject_globals():
+        # Report the LIVE engine, never the config string. The config string can
+        # disagree with the engine, and a badge that reads the config would have
+        # shown a reassuring green "PostgreSQL" while writes went to SQLite.
+        try:
+            engine_name = db.engine.name
+        except Exception:
+            engine_name = app.config.get('DB_ENGINE_NAME', 'unavailable')
+
+        return {
+            'school_name': app.config.get('SCHOOL_NAME', 'Chandrabhan Singh Public School'),
+            'academic_year': app.config.get('ACADEMIC_YEAR', '2026-27'),
+            'db_engine_name': engine_name,
+            'db_is_permanent': engine_name == 'postgresql',
+            'is_render_env': is_managed_host(),
+            'db_error': app.config.get('DB_ERROR'),
+        }
+
+    # ── Health endpoints ──────────────────────────────────────────────────
     @app.route('/health')
     def health():
-        """Render deployment health check — returns JSON instantly, zero DB queries."""
+        """Deployment health check. Touches no database."""
         return jsonify({'status': 'ok'}), 200
 
-    # -------------------------------------------------------------------
-    # ROOT REDIRECT — needs DB init first (current_user queries User table)
-    # -------------------------------------------------------------------
+    @app.route('/health/db')
+    def health_db():
+        """
+        Live database probe. Reports the real engine and whether a query
+        succeeds. Deliberately returns no connection string or error detail —
+        full diagnostics live on the director-only page.
+        """
+        try:
+            with db.engine.connect() as conn:
+                conn.execute(text('SELECT 1'))
+            engine_name = db.engine.name
+        except Exception:
+            return jsonify({'status': 'error', 'engine': 'unavailable', 'permanent': False}), 503
+
+        return jsonify({
+            'status': 'ok',
+            'engine': engine_name,
+            'permanent': engine_name == 'postgresql',
+        }), 200
+
     @app.route('/')
     def index():
-        """Root redirect. Requires DB for flask_login current_user check."""
-        try:
-            if current_user.is_authenticated:
-                if current_user.role == 'director':
-                    return redirect(url_for('director.dashboard'))
-                elif current_user.role == 'admin':
-                    return redirect(url_for('admin.dashboard'))
-                elif current_user.role == 'teacher':
-                    return redirect(url_for('teacher.dashboard'))
-        except Exception as e:
-            logger.exception(f"Database error on index route: {e}. Auto-recovering...")
-            db.session.rollback()
-            _init_database(app)
+        if current_user.is_authenticated:
+            if current_user.role == 'director':
+                return redirect(url_for('director.dashboard'))
+            if current_user.role == 'admin':
+                return redirect(url_for('admin.dashboard'))
+            if current_user.role == 'teacher':
+                return redirect(url_for('teacher.dashboard'))
         return redirect(url_for('auth.login'))
 
-    # -------------------------------------------------------------------
-    # LAZY DATABASE INITIALIZATION — runs on first real request
-    # Flag is ONLY set to True AFTER successful db.create_all()
-    # -------------------------------------------------------------------
-    _db_initialized = False
+    # ── Database error handling ───────────────────────────────────────────
+    from sqlalchemy.exc import SQLAlchemyError
 
-    @app.before_request
-    def ensure_db_initialized():
-        nonlocal _db_initialized
-        if app.config.get('TESTING') or request.path in _HEALTH_EXEMPT_PATHS:
-            return
+    @app.errorhandler(SQLAlchemyError)
+    def handle_database_error(error):
+        """
+        Surface database failures instead of redirecting.
 
-        # Force re-attempting PostgreSQL connection on request if DATABASE_URL is present
-        env_url = (os.environ.get('DATABASE_URL') or '').strip().rstrip('/')
-        if env_url and 'sqlite' in app.config.get('SQLALCHEMY_DATABASE_URI', ''):
-            if env_url.startswith('postgres://'):
-                env_url = env_url.replace('postgres://', 'postgresql://', 1)
-            parsed = urlparse(env_url)
-            if parsed.query:
-                params = parse_qs(parsed.query)
-                params.pop('sslmode', None)
-                clean_query = urlencode(params, doseq=True)
-                env_url = urlunparse(parsed._replace(query=clean_query))
-
-            try:
-                import psycopg2  # noqa: F401
-                app.config['SQLALCHEMY_DATABASE_URI'] = env_url
-                app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-                    'pool_pre_ping': True,
-                    'pool_recycle': 300,
-                    'pool_timeout': 30,
-                    'pool_size': 5,
-                    'max_overflow': 10,
-                    'connect_args': {'sslmode': 'require'}
-                }
-                _db_initialized = False
-            except ImportError:
-                pass
-
-        if _db_initialized:
-            return
-
-        db_uri = app.config.get('SQLALCHEMY_DATABASE_URI', '')
-        if 'postgresql' in db_uri:
-            print("\n================================================================")
-            print("  CONNECTED TO PERMANENT CLOUD DATABASE: PostgreSQL (Neon)")
-            print("================================================================\n")
-        else:
-            print("\n================================================================")
-            print("  CONNECTED TO LOCAL DATABASE: SQLite (Testing/Development)")
-            print("================================================================\n")
-
-        # Only mark as initialized if db.create_all() succeeds
-        if _init_database(app):
-            _db_initialized = True
-        else:
-            logger.error("Database initialization failed — will retry on next request.")
-
-    # -------------------------------------------------------------------
-    # RUNTIME ERROR RECOVERY — catches missing-table errors and auto-creates
-    # -------------------------------------------------------------------
-    from sqlalchemy.exc import ProgrammingError, OperationalError
-
-    @app.errorhandler(ProgrammingError)
-    def handle_programming_error(error):
-        """Auto-recover from missing tables (e.g. 'relation users does not exist')."""
-        nonlocal _db_initialized
-        logger.exception(f"DATABASE QUERY FAILED — ProgrammingError: {error}")
+        The previous handler returned redirect(request.url). On a POST that
+        turns into a GET and throws away the submitted form, so a failed write
+        looked to the user like data that "disappeared" with no error shown.
+        """
+        logger.exception(f'Database error while handling request: {error}')
         db.session.rollback()
-        try:
-            _init_database(app)
-            _db_initialized = True
-            return redirect(request.url)
-        except Exception as recovery_error:
-            logger.exception(f"DATABASE QUERY FAILED — Auto-recovery failed: {recovery_error}")
-            return "Internal Server Error — database tables could not be created. Check Render logs.", 500
-
-    @app.errorhandler(OperationalError)
-    def handle_operational_error(error):
-        """Auto-recover from connection or schema errors."""
-        nonlocal _db_initialized
-        logger.exception(f"DATABASE QUERY FAILED — OperationalError: {error}")
-        db.session.rollback()
-        try:
-            _init_database(app)
-            _db_initialized = True
-            return redirect(request.url)
-        except Exception as recovery_error:
-            logger.exception(f"DATABASE QUERY FAILED — Auto-recovery failed: {recovery_error}")
-            return "Internal Server Error — database connection failed. Check Render logs.", 500
-
+        return render_template_string(
+            '{% extends "base.html" %}{% block title %}Database Error{% endblock %}'
+            '{% block content %}<div style="padding:32px;">'
+            '<h1 style="font-size:22px;font-weight:700;color:#991b1b;">Could not reach the database</h1>'
+            '<p style="margin-top:12px;color:#475569;">Your last action was <strong>not saved</strong>. '
+            'Please use your browser Back button and try again in a moment.</p>'
+            '<p style="margin-top:12px;color:#475569;">If this keeps happening, ask the Director to open '
+            '<code>/director/diagnostics</code> and send the details to support.</p>'
+            '</div>{% endblock %}'
+        ), 500
 
     return app

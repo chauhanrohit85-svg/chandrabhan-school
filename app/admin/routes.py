@@ -459,6 +459,7 @@ def resolve_alert(alert_id):
 
 @admin_bp.route('/alerts/<int:alert_id>/intervention', methods=['POST'])
 @login_required
+@admin_required
 def record_intervention(alert_id):
     alert = AlertFlag.query.get_or_404(alert_id)
     action_tag = request.form.get('action_tag', '').strip()
@@ -469,21 +470,16 @@ def record_intervention(alert_id):
         alert.action_taken = action_note or action_tag
         alert.action_by = current_user.id
         alert.action_at = datetime.utcnow()
+        # This block used to sit after the return statement, so ticking
+        # "resolve" recorded the action but never actually closed the alert.
+        if request.form.get('resolve') == '1':
+            alert.is_resolved = 1
         db.session.commit()
-        flash('Remedial action log updated successfully.', 'success')
+        flash(f'Remedial action recorded for {alert.student.full_name}: {alert.action_tag}', 'success')
     except Exception as e:
         db.session.rollback()
         flash(f'Error recording intervention: {str(e)}', 'danger')
     return redirect(url_for('admin.alerts'))
-
-    if request.form.get('resolve') == '1':
-        alert.is_resolved = 1
-
-    db.session.commit()
-    flash(f'Remedial action recorded for {alert.student.full_name}: {alert.action_tag}', 'success')
-
-    next_page = request.referrer or url_for('admin.alerts')
-    return redirect(next_page)
 
 
 # ---------------------------------------------------------------------------

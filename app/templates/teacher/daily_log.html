@@ -28,6 +28,7 @@
     <div class="card-body">
       <form method="POST" action="{{ url_for('teacher.daily_log') }}"
             id="daily-log-form" data-autosave>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
 
         <!-- Lesson Completed -->
         <div class="form-group">

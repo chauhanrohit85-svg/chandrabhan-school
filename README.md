@@ -31,23 +31,31 @@ Open: [http://localhost:5000](http://localhost:5000)
 
 ---
 
-## 🔑 Default Credentials
+## 🔑 First-Run Credentials
 
-| Role     | Username       | Password    |
-|----------|----------------|-------------|
-| Admin    | `principal`    | `admin123`  |
-| Teacher  | `teacher1`–`5` | `teacher123`|
+There are **no default passwords**. The first time the app starts against an
+empty database it creates `director`, `principal` and `teacher1`–`5`, then either:
 
-> ⚠️ Change all passwords after first login in production!
+- uses `BOOTSTRAP_DIRECTOR_PASSWORD` / `BOOTSTRAP_ADMIN_PASSWORD` /
+  `BOOTSTRAP_TEACHER_PASSWORD` if you set them, or
+- generates strong random passwords and **prints them once** to the startup log.
+
+Copy them from the log on first deploy — they are stored only as bcrypt hashes
+and cannot be recovered afterwards. The Principal can reset any password from
+Admin → Teachers.
 
 ---
 
 ## 📺 TV Display (Smart TV Kiosk)
 
-1. Open Admin → **TV Kiosk Views**
-2. Copy the class URL
-3. Open it on the classroom Smart TV browser
-4. Press **Fullscreen** button or F11
+TV pages show student names, roll numbers and attendance, so they require a login.
+
+1. Admin → **Teachers** → create a user with role `tv` and an assigned class
+2. On the classroom Smart TV browser, sign in as that user with **Keep me signed in**
+3. It lands on its class view and stays signed in across restarts
+4. Press **Fullscreen** or F11
+
+A `tv` account can only open its own class. Staff accounts can open any class.
 
 TV view auto-refreshes every **5 minutes** and shows:
 - Real-time attendance KPIs
@@ -122,11 +130,31 @@ Admins can resolve alerts from the Alerts dashboard.
 
 1. Push to GitHub
 2. Connect repo to [Render](https://render.com)
-3. Set environment variables in Render dashboard:
-   - `SECRET_KEY` = (random string)
-   - `FLASK_ENV` = production
-4. Build command: `pip install -r requirements.txt && python migrations/init_db.py`
+3. Set environment variables in the Render dashboard:
+   - `DATABASE_URL` = your Neon PostgreSQL connection string (**required**)
+   - `SECRET_KEY` = a long random string (**required**)
+   - `FLASK_ENV` = `production`
+4. Build command: `pip install -r requirements.txt`
 5. Start command: `gunicorn run:app`
+
+Tables are created and master accounts seeded automatically at startup, so there
+is no separate migration step.
+
+### Storage guarantees
+
+The app **will not start** if `DATABASE_URL` is missing, if it is not a
+PostgreSQL URL, if the PostgreSQL driver cannot be imported, or if the database
+is unreachable after 5 retries. This is deliberate: Render's disk is ephemeral,
+so a silent fall back to SQLite means every student record entered since the
+last deploy is erased on the next restart. A failed deploy that says why is
+better than a portal that quietly loses data.
+
+Python is pinned in `.python-version`. `psycopg2-binary` publishes no wheels for
+Python 3.13, and an unimportable driver was the original cause of production
+falling back to SQLite.
+
+To confirm storage at any time: Director → **Storage Diagnostics**, or
+`GET /health/db` which returns `{"engine": "postgresql", "permanent": true}`.
 
 ---
 
@@ -136,7 +164,7 @@ Admins can resolve alerts from the Alerts dashboard.
 pytest tests/ -v --tb=short
 ```
 
-Expected: **~23 tests, all green**
+Expected: **88 tests, all green**
 
 ---
 

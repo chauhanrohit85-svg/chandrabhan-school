@@ -4,6 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="description" content="{% block meta_description %}School Management Portal — {{ school_name }}{% endblock %}" />
+  {# Consumed by sync.js so background offline-sync POSTs can pass CSRF validation. #}
+  <meta name="csrf-token" content="{{ csrf_token() }}" />
   <title>{% block title %}{% endblock %} | {{ school_name }}</title>
 
   <!-- Google Fonts -->
@@ -62,6 +64,10 @@
           <a href="{{ url_for('director.backup') }}"
              class="nav-link {% if 'director.backup' in request.endpoint %}active{% endif %}">
             <span class="nav-icon">💾</span> System Backup & Restore
+          </a>
+          <a href="{{ url_for('director.diagnostics') }}"
+             class="nav-link {% if request.endpoint == 'director.diagnostics' %}active{% endif %}">
+            <span class="nav-icon">🩺</span> Storage Diagnostics
           </a>
 
           <div class="nav-section-title" style="margin-top:16px;">Administration</div>
@@ -211,12 +217,13 @@
       </div>
 
       <div style="display:flex;align-items:center;gap:12px;">
-        <!-- Engine Status Badge -->
-        {% if db_engine_name == 'postgresql' %}
+        <!-- Engine Status Badge — driven by the LIVE engine, not the config string -->
+        {% if db_is_permanent %}
         <span class="badge" style="background:#10b981; color:white; font-size:12px; padding:4px 8px; border-radius:4px;">🟢 Active Engine: PostgreSQL (Neon Cloud Vault)</span>
         {% else %}
-        <span id="online-status" class="online-badge badge badge-success" style="font-size:12px;">● Online</span>
+        <span class="badge" style="background:#dc2626; color:white; font-size:12px; padding:4px 8px; border-radius:4px;">🔴 Active Engine: {{ db_engine_name }} — not permanent</span>
         {% endif %}
+        <span id="online-status" class="online-badge badge badge-success" style="font-size:12px;">● Online</span>
 
         <!-- Today's date -->
         <span style="font-size:13px;color:#64748b;font-weight:500;">
@@ -231,10 +238,16 @@
       </div>
     </header>
 
-    <!-- Critical SQLite Warning Banner on Render -->
-    {% if is_render_env and db_engine_name == 'sqlite' %}
-    <div style="background:#fee2e2; border-left:6px solid #dc2626; color:#991b1b; padding:12px 24px; font-weight:700; font-size:14px; margin-bottom:12px; display:flex; align-items:center; justify-content:space-between; box-shadow:0 2px 4px rgba(0,0,0,0.1);">
-      <span>⚠️ CRITICAL WARNING: Running in temporary SQLite mode!{% if postgres_error %} PostgreSQL Connection Error: {{ postgres_error }}{% else %} Data entered now WILL NOT be saved permanently.{% endif %}</span>
+    <!-- Non-permanent storage warning. Shown on any managed host that is not on
+         PostgreSQL, based on the live engine rather than the configured URI. -->
+    {% if is_render_env and not db_is_permanent %}
+    <div style="background:#fee2e2; border-left:6px solid #dc2626; color:#991b1b; padding:12px 24px; font-weight:700; font-size:14px; margin-bottom:12px; box-shadow:0 2px 4px rgba(0,0,0,0.1);">
+      <div>⚠️ CRITICAL: storage is <u>{{ db_engine_name }}</u>, not PostgreSQL. Anything entered now will be erased on the next server restart. Stop entering data.</div>
+      {% if current_user.is_authenticated and current_user.role == 'director' %}
+        <div style="font-weight:500; margin-top:6px;">
+          <a href="{{ url_for('director.diagnostics') }}" style="color:#991b1b; text-decoration:underline;">Open storage diagnostics →</a>
+        </div>
+      {% endif %}
     </div>
     {% endif %}
 

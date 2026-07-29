@@ -45,6 +45,7 @@
 
     <form method="POST" action="{{ url_for('teacher.pillar_entry') }}"
           id="pillar-form" data-autosave>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
       <input type="hidden" name="week_number" value="{{ current_week }}" />
       <input type="hidden" name="year" value="{{ current_year }}" />
 

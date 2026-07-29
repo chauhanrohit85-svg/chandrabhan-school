@@ -36,6 +36,7 @@
     <div class="card-header"><h2>➕ Add Class</h2></div>
     <div class="card-body">
       <form method="POST" action="{{ url_for('admin.add_class') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
         <div class="form-group">
           <label class="form-label">Grade</label>
           <select name="grade" class="form-control form-select">

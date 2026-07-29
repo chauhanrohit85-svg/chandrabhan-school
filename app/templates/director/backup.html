@@ -11,7 +11,9 @@
       <div>
         <div style="font-size:12px; font-weight:700; color:#6366f1; text-transform:uppercase; letter-spacing:0.5px;">Active Database Engine</div>
         <h2 style="margin:4px 0 0; font-size:22px; color:#1e293b;">{{ db_backend }}</h2>
-        <div style="font-size:12px; color:#64748b; margin-top:4px; font-family:monospace; word-break:break-all;">{{ db_uri }}</div>
+        {# The connection string is deliberately not shown here — it contains the database password. #}
+        <div style="font-size:12px; color:#64748b; margin-top:4px;">{{ db_status }}</div>
+        <a href="{{ url_for('director.diagnostics') }}" style="font-size:12px; color:#4f46e5; font-weight:600;">View storage diagnostics →</a>
       </div>
       <div>
         <a href="{{ url_for('director.backup_export') }}" class="btn btn-primary" style="font-weight:700; padding:10px 20px; font-size:14px;">
@@ -57,6 +59,7 @@
     </div>
     <div class="card-body" style="padding:24px;">
       <form action="{{ url_for('director.backup_restore') }}" method="POST" enctype="multipart/form-data" style="display:flex; flex-direction:column; gap:16px;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
         <div style="font-size:14px; color:#334155;">
           Upload a previously exported JSON backup file (`chandrabhan_school_backup_*.json`) to restore school rosters, attendance, syllabus logs, and evaluation scores.
         </div>
