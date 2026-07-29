@@ -11,6 +11,7 @@
     </div>
     <div class="card-body">
       <form method="POST" action="{{ url_for('teacher.edit_student', student_id=student.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
         <div class="form-group">
           <label class="form-label">Roll Number</label>
           <input type="text" name="roll_number" class="form-control" value="{{ student.roll_number }}" required />

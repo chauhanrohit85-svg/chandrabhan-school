@@ -1,19 +1,57 @@
 """
 TV display routes — read-only, high-contrast class views.
-Accessible without teacher auth (uses a kiosk-mode URL).
+
+These pages show student names, roll numbers, attendance and alert text, so they
+require a login like every other page. Previously they were reachable by anyone
+who guessed /tv/<class_id>, which published the roster of a class to the open
+internet.
+
+For a classroom Smart TV, create a user with role='tv' and an assigned class,
+sign in once on the TV browser with "Keep me signed in", and the kiosk stays
+authenticated across restarts. A 'tv' user can only open its own class; staff
+can open any class.
 """
-from flask import render_template, abort, request
+from functools import wraps
+from datetime import date, datetime
+
+from flask import render_template, redirect, url_for, flash
+from flask_login import login_required, current_user
+from sqlalchemy import func
+
 from app.tv import tv_bp
 from app.models import Class, Student, AttendanceRecord, PillarScore, AlertFlag, TeacherClassSubject
 from app.extensions import db
-from datetime import date, datetime
-from sqlalchemy import func
-import json
+
+_STAFF_ROLES = ('admin', 'director', 'teacher')
+
+
+def tv_viewer_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not current_user.is_authenticated or current_user.role not in _STAFF_ROLES + ('tv',):
+            flash('Please sign in to view the classroom display.', 'warning')
+            return redirect(url_for('auth.login'))
+        return f(*args, **kwargs)
+    return decorated
+
+
+def _may_view_class(class_id: int) -> bool:
+    if current_user.role in _STAFF_ROLES:
+        return True
+    # A kiosk account is pinned to the single class it was created for.
+    return current_user.assigned_class_id == class_id
 
 
 @tv_bp.route('/<int:class_id>')
+@login_required
+@tv_viewer_required
 def class_view(class_id):
     cls = Class.query.get_or_404(class_id)
+
+    if not _may_view_class(class_id):
+        flash('This display is not authorised for that class.', 'danger')
+        return redirect(url_for('auth.login'))
+
     today = date.today()
 
     students = Student.query.filter_by(class_id=class_id, is_active=1)\
@@ -104,8 +142,17 @@ def class_view(class_id):
 
 
 @tv_bp.route('/list')
+@login_required
+@tv_viewer_required
 def class_list():
     """Simple list of all classes with TV links."""
+    if current_user.role not in _STAFF_ROLES:
+        # Kiosk accounts go straight to their own class rather than a chooser.
+        if current_user.assigned_class_id:
+            return redirect(url_for('tv.class_view', class_id=current_user.assigned_class_id))
+        flash('This display has no class assigned. Ask an administrator to set one.', 'warning')
+        return redirect(url_for('auth.login'))
+
     classes = Class.query.order_by(Class.grade, Class.section).all()
     return render_template('tv/class_list.html', classes=classes)
 

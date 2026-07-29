@@ -175,10 +175,79 @@ def test_backup_restore(director_client, app):
         assert restored.full_name == 'Restored Student Test'
 
 
-def test_postgresql_uri_conversion(monkeypatch):
-    """Verify postgres:// is converted to postgresql:// in Config._db_uri()."""
-    from app.config import Config
+def test_backup_restore_handles_daily_logs(director_client, app):
+    """
+    Regression: a backup containing daily logs used to abort the whole restore.
+
+    The restore built TeacherDailyLog with topic_taught / lesson_status /
+    media_attachment_base64 — none of which exist on the model — so a single log
+    row raised TypeError and rolled back every other table too. A director
+    restoring after a provider switch would have silently recovered nothing.
+    """
+    import json, io
+    from datetime import date
+    from app.models import TeacherDailyLog, AlertFlag, TeacherClassSubject, User, Class
+
+    with app.app_context():
+        teacher_id = User.query.filter_by(username='test_teacher1').first().id
+        class_id = Class.query.first().id
+        student_id = Student.query.first().id
+
+    backup_content = {
+        'version': '2.0',
+        'tables': {
+            'daily_logs': [{
+                'id': 8801,
+                'teacher_id': teacher_id,
+                'class_id': class_id,
+                'subject': 'General',
+                'log_date': date.today().isoformat(),
+                'lesson_completed': 1,
+                'syllabus_topic': 'Fractions revision',
+                'syllabus_status': 'on_track',
+                'homework_assigned': 1,
+                'remarks': 'Restored log',
+                'photo_base64': None,
+                'submitted_at': None,
+            }],
+            'teacher_class_subjects': [{
+                'id': 8802, 'teacher_id': teacher_id,
+                'class_id': class_id, 'subject': 'Restored Subject',
+            }],
+            'alert_flags': [{
+                'id': 8803, 'student_id': student_id, 'pillar': 'reading',
+                'alert_type': 'below_threshold', 'message': 'Restored alert',
+                'is_resolved': 0, 'created_at': None,
+                'action_taken': None, 'action_tag': None,
+                'action_by': None, 'action_at': None,
+            }],
+        }
+    }
+
+    data = {'backup_file': (io.BytesIO(json.dumps(backup_content).encode('utf-8')),
+                            'backup_logs.json')}
+    resp = director_client.post('/director/backup/restore', data=data,
+                                content_type='multipart/form-data', follow_redirects=True)
+    assert resp.status_code == 200
+    assert b'Error restoring database' not in resp.data
+
+    with app.app_context():
+        from app.extensions import db as _db
+        log = _db.session.get(TeacherDailyLog, 8801)
+        assert log is not None, 'daily log was not restored'
+        assert log.syllabus_topic == 'Fractions revision'
+        assert log.lesson_completed == 1
+
+        # These two tables were exported but never read back before.
+        assert _db.session.get(TeacherClassSubject, 8802) is not None
+        assert _db.session.get(AlertFlag, 8803) is not None
+
+
+def test_postgresql_uri_conversion(monkeypatch, fake_pg_driver):
+    """Verify postgres:// is converted to postgresql:// during URI resolution."""
+    from app.config import resolve_database_uri
     monkeypatch.setenv('DATABASE_URL', 'postgres://user:pass@ep-test.neon.tech/neondb')
-    uri = Config._db_uri()
+    uri, _ = resolve_database_uri('production')
     assert uri.startswith('postgresql://')
+
 

@@ -2,16 +2,37 @@
 Director / Super-Admin routes for executive management overview, compliance audits, and physical notebook inspection sheets.
 Exclusively accessible to users with role='director'.
 """
+import os
 from datetime import date, datetime, timedelta
 from flask import render_template, request, flash, redirect, url_for, current_app
 from flask_login import login_required, current_user
-from sqlalchemy import func
+from sqlalchemy import func, text
 
 from app.director import director_bp
 from app.auth.routes import director_required
+from app.config import is_managed_host
 from app.models import (User, Class, Student, TeacherDailyLog, AttendanceRecord,
                         PillarScore, AlertFlag, TeacherClassSubject)
 from app.extensions import db
+
+
+def _describe_storage():
+    """
+    Describe the storage backend from the LIVE SQLAlchemy engine.
+
+    Never inspect SQLALCHEMY_DATABASE_URI for this. Flask-SQLAlchemy builds the
+    engine during init_app(), so the config string can be rewritten afterwards
+    without the engine following — which is exactly how a green "PostgreSQL"
+    badge came to be displayed over a SQLite database.
+    """
+    try:
+        engine_name = db.engine.name
+    except Exception:
+        return "Unavailable", "Database unreachable"
+
+    if engine_name == 'postgresql':
+        return "PostgreSQL (Neon Cloud Vault)", "Permanent Cloud Storage Active"
+    return "SQLite (Local Dev Storage)", "Local Standalone Mode"
 
 
 @director_bp.route('/dashboard')
@@ -38,14 +59,10 @@ def dashboard():
     actual_daily_logs = TeacherDailyLog.query.filter(TeacherDailyLog.log_date >= seven_days_ago).count()
     compliance_rate = round((actual_daily_logs / expected_daily_logs * 100), 1) if expected_daily_logs else 0
 
-    db_uri = current_app.config.get('SQLALCHEMY_DATABASE_URI', '')
-    engine_name = getattr(db.engine, 'name', '') if hasattr(db, 'engine') else ''
-    if 'postgresql' in db_uri or 'postgres' in engine_name:
-        db_backend = "PostgreSQL (Neon Cloud Vault)"
-        db_status = "Permanent Cloud Storage Active"
-    else:
-        db_backend = "SQLite (Local Dev Storage)"
-        db_status = "Local Standalone Mode"
+    # Read the LIVE engine, not the configured URI string. Those can disagree,
+    # and trusting the config once produced a green "PostgreSQL" badge while
+    # writes were landing in a temporary SQLite file.
+    db_backend, db_status = _describe_storage()
 
 
 
@@ -151,18 +168,56 @@ def _serialize_model_instance(inst):
     return data
 
 
+def _parse_dt(value):
+    """Parse an ISO timestamp from a backup file, tolerating nulls."""
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value
+    try:
+        return datetime.fromisoformat(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _resync_identity_sequences():
+    """
+    Realign PostgreSQL identity sequences after a restore.
+
+    Restores insert rows with explicit primary keys, which does NOT advance the
+    backing sequence. The next natural insert then reuses id=1 and fails with a
+    duplicate key error — so adding a student straight after a restore would
+    break until every existing id had been stepped over. SQLite's ROWID picks
+    max(id)+1 on its own, so this is PostgreSQL-only.
+    """
+    if db.engine.name != 'postgresql':
+        return
+
+    models = (User, Class, Student, TeacherClassSubject, TeacherDailyLog,
+              AttendanceRecord, PillarScore, AlertFlag)
+    try:
+        for model in models:
+            table = model.__table__.name
+            db.session.execute(text(
+                "SELECT setval("
+                "  pg_get_serial_sequence(:table, 'id'),"
+                "  COALESCE((SELECT MAX(id) FROM " + table + "), 1),"
+                "  true)"
+            ), {'table': table})
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception('Could not resync identity sequences after restore')
+
+
 @director_bp.route('/backup')
 @login_required
 @director_required
 def backup():
-    db_uri = current_app.config.get('SQLALCHEMY_DATABASE_URI', '')
-    engine_name = getattr(db.engine, 'name', '') if hasattr(db, 'engine') else ''
-    if 'postgresql' in db_uri or 'postgres' in engine_name:
-        db_backend = "PostgreSQL (Neon Cloud Vault)"
-        db_status = "Permanent Cloud Storage Active"
-    else:
-        db_backend = "SQLite (Local Dev Storage)"
-        db_status = "Local Standalone Mode"
+    # Read the LIVE engine, not the configured URI string. Those can disagree,
+    # and trusting the config once produced a green "PostgreSQL" badge while
+    # writes were landing in a temporary SQLite file.
+    db_backend, db_status = _describe_storage()
 
 
 
@@ -179,7 +234,7 @@ def backup():
 
     return render_template('director/backup.html',
         db_backend=db_backend,
-        db_uri=db_uri,
+        db_status=db_status,
         stats=stats,
     )
 
@@ -279,7 +334,24 @@ def backup_restore():
                 )
                 db.session.add(s)
 
+        # Restore Teacher Class-Subject mappings (exported since v2.0 but,
+        # until now, never read back — teachers lost their class assignments on
+        # every restore).
+        for m_data in tables.get('teacher_class_subjects', []):
+            existing = db.session.get(TeacherClassSubject, m_data['id'])
+            if not existing:
+                db.session.add(TeacherClassSubject(
+                    id=m_data['id'],
+                    teacher_id=m_data['teacher_id'],
+                    class_id=m_data['class_id'],
+                    subject=m_data['subject'],
+                ))
+
         # Restore Daily Logs
+        # NOTE: these field names must match app.models.TeacherDailyLog. They
+        # previously read topic_taught / lesson_status / media_attachment_base64,
+        # none of which exist on the model, so every restore containing a single
+        # daily log raised TypeError and rolled back the ENTIRE restore.
         for l_data in tables.get('daily_logs', []):
             existing = db.session.get(TeacherDailyLog, l_data['id'])
             if not existing:
@@ -289,12 +361,14 @@ def backup_restore():
                     id=l_data['id'],
                     teacher_id=l_data['teacher_id'],
                     class_id=l_data['class_id'],
-                    subject=l_data['subject'],
+                    subject=l_data.get('subject', 'General'),
                     log_date=log_d,
-                    topic_taught=l_data.get('topic_taught', ''),
-                    lesson_status=l_data.get('lesson_status', 'Concept Taught'),
+                    lesson_completed=l_data.get('lesson_completed', 0),
+                    syllabus_topic=l_data.get('syllabus_topic', ''),
+                    syllabus_status=l_data.get('syllabus_status', 'on_track'),
+                    homework_assigned=l_data.get('homework_assigned', 0),
                     remarks=l_data.get('remarks'),
-                    media_attachment_base64=l_data.get('media_attachment_base64'),
+                    photo_base64=l_data.get('photo_base64'),
                     submitted_at=sub_d
                 )
                 db.session.add(log)
@@ -332,10 +406,154 @@ def backup_restore():
                 )
                 db.session.add(score)
 
+        # Restore Alert Flags (also exported but never previously read back).
+        for f_data in tables.get('alert_flags', []):
+            existing = db.session.get(AlertFlag, f_data['id'])
+            if not existing:
+                db.session.add(AlertFlag(
+                    id=f_data['id'],
+                    student_id=f_data['student_id'],
+                    pillar=f_data.get('pillar'),
+                    alert_type=f_data['alert_type'],
+                    message=f_data['message'],
+                    is_resolved=f_data.get('is_resolved', 0),
+                    created_at=_parse_dt(f_data.get('created_at')),
+                    action_taken=f_data.get('action_taken'),
+                    action_tag=f_data.get('action_tag'),
+                    action_by=f_data.get('action_by'),
+                    action_at=_parse_dt(f_data.get('action_at')),
+                ))
+
         db.session.commit()
+        _resync_identity_sequences()
         flash('Database successfully restored from backup file!', 'success')
     except Exception as e:
         db.session.rollback()
+        current_app.logger.exception('Backup restore failed')
         flash(f'Error restoring database: {str(e)}', 'danger')
 
     return redirect(url_for('director.backup'))
+
+
+# ---------------------------------------------------------------------------
+# Staff accounts (Director only)
+# ---------------------------------------------------------------------------
+MIN_PASSWORD_LENGTH = 8
+
+
+@director_bp.route('/staff')
+@login_required
+@director_required
+def staff():
+    """
+    Every account in one place, including the Principal's.
+
+    The Principal deliberately cannot reach director or administrator accounts,
+    so the Director is the recovery path when one of those passwords is lost.
+    """
+    users = User.query.order_by(User.role, User.full_name).all()
+    return render_template('director/staff.html',
+        users=users,
+        min_length=MIN_PASSWORD_LENGTH,
+    )
+
+
+@director_bp.route('/staff/<int:user_id>/password', methods=['POST'])
+@login_required
+@director_required
+def reset_staff_password(user_id):
+    user = db.session.get(User, user_id)
+    if not user:
+        flash('That account no longer exists.', 'danger')
+        return redirect(url_for('director.staff'))
+
+    new_password = request.form.get('new_password', '')
+    if len(new_password) < MIN_PASSWORD_LENGTH:
+        flash(f'Please choose a password of at least {MIN_PASSWORD_LENGTH} characters.', 'warning')
+        return redirect(url_for('director.staff'))
+
+    try:
+        user.set_password(new_password)
+        db.session.commit()
+        current_app.logger.info(
+            f'Director {current_user.username} reset the password for {user.username}')
+        flash(f'Password reset for {user.full_name}. Give it to them privately and '
+              f'ask them to change it from "Change My Password".', 'success')
+    except Exception as exc:
+        db.session.rollback()
+        current_app.logger.exception('Director password reset failed')
+        flash(f'Could not reset the password: {exc}', 'danger')
+
+    return redirect(url_for('director.staff'))
+
+
+@director_bp.route('/staff/<int:user_id>/toggle', methods=['POST'])
+@login_required
+@director_required
+def toggle_staff(user_id):
+    user = db.session.get(User, user_id)
+    if not user:
+        flash('That account no longer exists.', 'danger')
+        return redirect(url_for('director.staff'))
+
+    if user.id == current_user.id:
+        # Locking yourself out would leave nobody able to reach these controls.
+        flash('You cannot deactivate your own Director account.', 'warning')
+        return redirect(url_for('director.staff'))
+
+    try:
+        user.is_active = 0 if user.is_active else 1
+        db.session.commit()
+        flash(f'{user.full_name} has been {"activated" if user.is_active else "deactivated"}.', 'info')
+    except Exception as exc:
+        db.session.rollback()
+        flash(f'Could not update the account: {exc}', 'danger')
+
+    return redirect(url_for('director.staff'))
+
+
+@director_bp.route('/diagnostics')
+@login_required
+@director_required
+def diagnostics():
+    """
+    Live storage diagnostics. Reports the ACTUAL SQLAlchemy engine rather than
+    the configured URI string — those two can disagree, and a badge driven by
+    config once showed a reassuring green "PostgreSQL" while writes were going
+    to a temporary SQLite file.
+
+    The connection string is never rendered; it contains the database password.
+    """
+    engine_name = 'unavailable'
+    server_version = None
+    probe_error = None
+    row_counts = {}
+
+    try:
+        engine_name = db.engine.name
+        with db.engine.connect() as conn:
+            if engine_name == 'postgresql':
+                server_version = conn.execute(text('SHOW server_version')).scalar()
+            else:
+                conn.execute(text('SELECT 1'))
+    except Exception as exc:
+        probe_error = f'{type(exc).__name__}: {exc}'
+
+    if not probe_error:
+        for label, model in (('Users', User), ('Classes', Class), ('Students', Student),
+                             ('Daily logs', TeacherDailyLog), ('Attendance', AttendanceRecord),
+                             ('Pillar scores', PillarScore), ('Alerts', AlertFlag)):
+            try:
+                row_counts[label] = model.query.count()
+            except Exception:
+                row_counts[label] = None
+
+    return render_template('director/diagnostics.html',
+        engine_name=engine_name,
+        is_permanent=(engine_name == 'postgresql'),
+        server_version=server_version,
+        probe_error=probe_error or current_app.config.get('DB_ERROR'),
+        row_counts=row_counts,
+        host_is_managed=is_managed_host(),
+        database_url_present=bool(os.environ.get('DATABASE_URL')),
+    )

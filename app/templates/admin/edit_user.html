@@ -13,6 +13,7 @@
     </div>
     <div class="card-body">
       <form method="POST" action="{{ url_for('admin.edit_user', user_id=user.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
         <div class="form-group">
           <label class="form-label">Full Name</label>
           <input type="text" name="full_name" class="form-control" value="{{ user.full_name }}" required />
@@ -77,6 +78,7 @@
               <td><span class="badge badge-purple">{{ m.subject }}</span></td>
               <td style="text-align:right;">
                 <form method="POST" action="{{ url_for('admin.delete_user_mapping', mapping_id=m.id) }}" style="display:inline;" onsubmit="return confirm('Remove this mapping?');">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
                   <button type="submit" class="btn btn-sm btn-danger" style="padding:4px 8px; font-size:12px; min-height:28px;">Delete</button>
                 </form>
               </td>
@@ -92,6 +94,7 @@
       {% endif %}
 
       <form method="POST" action="{{ url_for('admin.add_user_mapping', user_id=user.id) }}" style="background:#f8fafc; padding:16px; border-radius:10px; border:1px solid #e2e8f0;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
         <h3 style="margin-top:0; font-size:15px; color:#1e293b;">➕ Add Class-Subject Mapping</h3>
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px;">
           <div>

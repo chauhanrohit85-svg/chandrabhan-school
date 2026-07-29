@@ -55,6 +55,7 @@
     <div class="card-header"><h2>➕ Add Student</h2></div>
     <div class="card-body">
       <form method="POST" action="{{ url_for('admin.add_student') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
         <div class="form-group">
           <label class="form-label">Roll Number</label>
           <input type="text" name="roll_number" class="form-control" placeholder="e.g. 01" required />

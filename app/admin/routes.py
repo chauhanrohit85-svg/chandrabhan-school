@@ -27,6 +27,17 @@ def admin_required(f):
     return decorated
 
 
+# The Principal manages classroom staff only. Director and administrator
+# accounts are deliberately out of reach: edit_user accepts any user id, so
+# without this the Principal could open the Director's account by URL, reset its
+# password and sign in as the super-admin they are meant to be accountable to.
+ADMIN_MANAGEABLE_ROLES = ('teacher', 'tv')
+
+
+def _admin_may_manage(user) -> bool:
+    return user.role in ADMIN_MANAGEABLE_ROLES
+
+
 # ---------------------------------------------------------------------------
 # Alert generation helper
 # ---------------------------------------------------------------------------
@@ -459,6 +470,7 @@ def resolve_alert(alert_id):
 
 @admin_bp.route('/alerts/<int:alert_id>/intervention', methods=['POST'])
 @login_required
+@admin_required
 def record_intervention(alert_id):
     alert = AlertFlag.query.get_or_404(alert_id)
     action_tag = request.form.get('action_tag', '').strip()
@@ -469,21 +481,16 @@ def record_intervention(alert_id):
         alert.action_taken = action_note or action_tag
         alert.action_by = current_user.id
         alert.action_at = datetime.utcnow()
+        # This block used to sit after the return statement, so ticking
+        # "resolve" recorded the action but never actually closed the alert.
+        if request.form.get('resolve') == '1':
+            alert.is_resolved = 1
         db.session.commit()
-        flash('Remedial action log updated successfully.', 'success')
+        flash(f'Remedial action recorded for {alert.student.full_name}: {alert.action_tag}', 'success')
     except Exception as e:
         db.session.rollback()
         flash(f'Error recording intervention: {str(e)}', 'danger')
     return redirect(url_for('admin.alerts'))
-
-    if request.form.get('resolve') == '1':
-        alert.is_resolved = 1
-
-    db.session.commit()
-    flash(f'Remedial action recorded for {alert.student.full_name}: {alert.action_tag}', 'success')
-
-    next_page = request.referrer or url_for('admin.alerts')
-    return redirect(next_page)
 
 
 # ---------------------------------------------------------------------------
@@ -507,6 +514,15 @@ def add_user():
     password = request.form.get('password', '')
     role = request.form.get('role', 'teacher')
     class_id = request.form.get('assigned_class_id') or None
+
+    if role not in ADMIN_MANAGEABLE_ROLES:
+        flash('You can only create teacher and classroom-display accounts. '
+              'Ask the Director to create administrator accounts.', 'danger')
+        return redirect(url_for('admin.users'))
+
+    if len(password) < 8:
+        flash('Please choose a password of at least 8 characters.', 'warning')
+        return redirect(url_for('admin.users'))
 
     if User.query.filter_by(username=username).first():
         flash(f'Username "{username}" already exists.', 'danger')
@@ -532,15 +548,26 @@ def edit_user(user_id):
     user = User.query.get_or_404(user_id)
     classes = Class.query.order_by(Class.grade, Class.section).all()
 
+    if not _admin_may_manage(user):
+        flash('Director and administrator accounts can only be managed by the Director.', 'danger')
+        return redirect(url_for('admin.users'))
+
     if request.method == 'POST':
         try:
             user.full_name = request.form.get('full_name', user.full_name).strip()
-            user.role = request.form.get('role', user.role)
+            # A role change is restricted to the same set, so this cannot be used
+            # to promote a teacher into an administrator.
+            new_role = request.form.get('role', user.role)
+            if new_role in ADMIN_MANAGEABLE_ROLES:
+                user.role = new_role
             class_id = request.form.get('assigned_class_id') or None
             user.assigned_class_id = int(class_id) if class_id else None
             user.is_active = 1 if request.form.get('is_active') else 0
             new_pw = request.form.get('new_password', '')
             if new_pw:
+                if len(new_pw) < 8:
+                    flash('Please choose a password of at least 8 characters.', 'warning')
+                    return redirect(url_for('admin.edit_user', user_id=user_id))
                 user.set_password(new_pw)
             db.session.commit()
             flash(f'Updated {user.full_name} successfully.', 'success')
@@ -557,6 +584,9 @@ def edit_user(user_id):
 @admin_required
 def toggle_user(user_id):
     user = User.query.get_or_404(user_id)
+    if not _admin_may_manage(user):
+        flash('Director and administrator accounts can only be managed by the Director.', 'danger')
+        return redirect(url_for('admin.users'))
     try:
         user.is_active = 0 if user.is_active else 1
         db.session.commit()
@@ -857,6 +887,8 @@ def student_profile(student_id):
         student_id=student_id, is_resolved=0
     ).order_by(AlertFlag.created_at.desc()).all()
 
+    weeks = list(range(start_wk, cw + 1))
+
     # Current week radar data
     radar_data = {}
     for pillar in PillarScore.PILLARS:
@@ -869,6 +901,60 @@ def student_profile(student_id):
         score = q.first()
         radar_data[pillar] = score.qualitative if score else 0
 
+    # ── Chart-ready summaries ────────────────────────────────────────────
+    # A week-by-week series per pillar (None where nothing was recorded, so the
+    # line chart shows a gap rather than pretending the score dropped to zero),
+    # plus a headline card per pillar with its direction of travel.
+    pillar_series = {}
+    pillar_summary = {}
+
+    for pillar in PillarScore.PILLARS:
+        by_week = {s.week_number: s.qualitative for s in pillar_history.get(pillar, [])}
+        series = [by_week.get(wk) for wk in weeks]
+        pillar_series[pillar] = series
+
+        recorded = [(wk, by_week[wk]) for wk in weeks if by_week.get(wk) is not None]
+        latest = recorded[-1][1] if recorded else None
+        previous = recorded[-2][1] if len(recorded) > 1 else None
+
+        if latest is None:
+            direction, delta = 'none', 0
+        elif previous is None:
+            direction, delta = 'flat', 0
+        else:
+            delta = latest - previous
+            direction = 'up' if delta > 0 else ('down' if delta < 0 else 'flat')
+
+        average = round(sum(v for _, v in recorded) / len(recorded), 1) if recorded else None
+
+        pillar_summary[pillar] = {
+            'label': PillarScore.PILLAR_LABELS.get(pillar, pillar),
+            'icon': PillarScore.PILLAR_ICONS.get(pillar, ''),
+            'latest': latest,
+            'latest_label': PillarScore.QUALITATIVE_LABELS.get(latest, 'Not scored yet'),
+            'color': PillarScore.QUALITATIVE_COLORS.get(latest, '#cbd5e1'),
+            'percent': round((latest / 5) * 100) if latest else 0,
+            'direction': direction,
+            'delta': abs(delta),
+            'average': average,
+            'weeks_recorded': len(recorded),
+        }
+
+    scored = [s['latest'] for s in pillar_summary.values() if s['latest'] is not None]
+    overall = {
+        'average': round(sum(scored) / len(scored), 1) if scored else None,
+        'pillars_scored': len(scored),
+        'pillars_total': len(PillarScore.PILLARS),
+    }
+    if overall['average'] is not None:
+        overall['color'] = PillarScore.QUALITATIVE_COLORS.get(round(overall['average']), '#cbd5e1')
+        overall['label'] = PillarScore.QUALITATIVE_LABELS.get(round(overall['average']), '')
+    else:
+        overall['color'], overall['label'] = '#cbd5e1', 'No scores yet'
+
+    total_attendance = present_count + absent_count + late_count
+    attendance_percent = round(present_count / total_attendance * 100) if total_attendance else None
+
     return render_template('admin/student_profile.html',
         student=student,
         selected_subject=selected_subject,
@@ -876,13 +962,19 @@ def student_profile(student_id):
         pillar_history=pillar_history,
         pillar_labels=PillarScore.PILLAR_LABELS,
         pillar_icons=PillarScore.PILLAR_ICONS,
+        pillar_colors=PillarScore.PILLAR_COLORS,
         qualitative_labels=PillarScore.QUALITATIVE_LABELS,
+        qualitative_colors=PillarScore.QUALITATIVE_COLORS,
         attendance_records=attendance_records,
         present_count=present_count,
         absent_count=absent_count,
         late_count=late_count,
+        attendance_percent=attendance_percent,
         active_alerts=active_alerts,
         alert_labels=AlertFlag.ALERT_TYPE_LABELS,
         radar_data=radar_data,
-        weeks=list(range(start_wk, cw + 1)),
+        pillar_series=pillar_series,
+        pillar_summary=pillar_summary,
+        overall=overall,
+        weeks=weeks,
     )

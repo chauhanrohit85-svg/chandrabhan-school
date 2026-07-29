@@ -31,6 +31,7 @@
 
       {% if student_count > 0 %}
       <form method="POST" action="{{ url_for('teacher.execute_promotion') }}" onsubmit="return confirm('Promote {{ student_count }} students of {{ cls.display_name }} to {{ next_label }}?');">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
         <div class="form-group" style="margin-bottom:20px;">
           <label class="form-label">Next Academic Year</label>
           <input type="text" name="target_year" value="{{ target_year }}" class="form-control" style="width:200px; font-weight:700;" required />

@@ -9,6 +9,27 @@ import bcrypt
 
 
 # ---------------------------------------------------------------------------
+# AppSetting — small key/value store for values the app manages itself
+# ---------------------------------------------------------------------------
+class AppSetting(db.Model):
+    """
+    Settings the application generates and remembers on its own.
+
+    Used for the session signing key. Keeping it in the database means a school
+    does not have to set it by hand in a hosting dashboard, and it stays the
+    same across restarts, so nobody gets logged out on every deploy.
+    """
+    __tablename__ = 'app_settings'
+
+    key = db.Column(db.String(64), primary_key=True)
+    value = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<AppSetting {self.key}>'
+
+
+# ---------------------------------------------------------------------------
 # User Model
 # ---------------------------------------------------------------------------
 class User(UserMixin, db.Model):
@@ -183,6 +204,17 @@ class TeacherDailyLog(db.Model):
         'ahead': 'Ahead of Schedule',
     }
 
+    # One-tap notes for the daily log. Teachers tap these instead of typing;
+    # the free-text box stays available for anything unusual.
+    QUICK_NOTES = [
+        'Revision done',
+        'Class test taken',
+        'Doubt session held',
+        'Practical / activity',
+        'Homework checked',
+        'Syllabus running late',
+    ]
+
     def __repr__(self):
         return f'<TeacherDailyLog {self.teacher_id} {self.log_date} {self.subject}>'
 
@@ -232,6 +264,15 @@ class PillarScore(db.Model):
         'reading': '📖',
         'writing': '✍️',
     }
+    # One stable colour per pillar so a line keeps its identity across every
+    # chart on every page.
+    PILLAR_COLORS = {
+        'english_speaking': '#6366f1',   # indigo
+        'mathematics': '#0ea5e9',        # sky
+        'reasoning': '#a855f7',          # purple
+        'reading': '#14b8a6',            # teal
+        'writing': '#f59e0b',            # amber
+    }
     QUALITATIVE_LABELS = {
         1: 'Needs Work',
         2: 'Developing',
@@ -239,6 +280,27 @@ class PillarScore(db.Model):
         4: 'Good',
         5: 'Excellent',
     }
+    QUALITATIVE_COLORS = {
+        1: '#ef4444',   # red
+        2: '#f97316',   # orange
+        3: '#eab308',   # yellow
+        4: '#84cc16',   # lime
+        5: '#10b981',   # green
+    }
+    # A star rating implies a percentage band, so teachers never have to type a
+    # number. The derived value is only used when the % field is left blank.
+    QUALITATIVE_PERCENT = {1: 20.0, 2: 40.0, 3: 60.0, 4: 80.0, 5: 100.0}
+
+    # One-tap milestone remarks. Tapping toggles the tag on or off, so recording
+    # a remark needs no typing at all.
+    MILESTONE_TAGS = [
+        'Attentive',
+        'Needs reading drill',
+        'Concept clear',
+        'Homework incomplete',
+        'Needs practice',
+        'Improved',
+    ]
 
     id = db.Column(db.Integer, primary_key=True)
     student_id = db.Column(db.Integer, db.ForeignKey('students.id'), nullable=False)

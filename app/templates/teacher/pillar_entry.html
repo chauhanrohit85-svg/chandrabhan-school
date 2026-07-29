@@ -1,14 +1,106 @@
 {% extends "base.html" %}
 {% block title %}Pillar Scores{% endblock %}
-{% block page_title %}5-Pillar Score Entry — Week {{ current_week }}{% endblock %}
+{% block page_title %}Weekly Scores — Week {{ current_week }}{% endblock %}
+
+{% block extra_head %}
+<style>
+  /* One card per student instead of a wide scrolling grid, so this works on a
+     phone. Scoring is tapping a number — nothing has to be typed. */
+  .stu-card {
+    background:#fff; border:1px solid #e2e8f0; border-radius:14px;
+    margin-bottom:12px; overflow:hidden;
+  }
+  .stu-head {
+    display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+    padding:12px 16px; background:#f8fafc; border-bottom:1px solid #eef2f7;
+  }
+  .stu-name { font-weight:700; color:#1e293b; font-size:15px; }
+  .stu-roll {
+    font-size:11px; font-weight:700; color:#6d28d9;
+    background:#ede9fe; padding:2px 8px; border-radius:999px;
+  }
+  .stu-done { margin-left:auto; font-size:12px; font-weight:700; color:#94a3b8; }
+  .stu-done.is-complete { color:#059669; }
+
+  .pillar-row {
+    display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+    padding:12px 16px; border-top:1px solid #f1f5f9;
+  }
+  .pillar-name {
+    flex:1 1 150px; min-width:130px;
+    font-size:14px; font-weight:600; color:#334155;
+    display:flex; align-items:center; gap:7px;
+  }
+
+  /* The 1–5 rating buttons. Colour carries the meaning: red = needs work
+     through to green = excellent, so the score reads at a glance. */
+  .rate { display:flex; gap:6px; }
+  .rate input { position:absolute; opacity:0; pointer-events:none; }
+  .rate label { margin:0; }
+  .rate span {
+    display:flex; align-items:center; justify-content:center;
+    width:42px; height:42px; border-radius:11px; cursor:pointer;
+    font-size:15px; font-weight:800; color:#94a3b8;
+    background:#f8fafc; border:2px solid #e2e8f0;
+    transition:transform .1s, background .12s, color .12s, border-color .12s;
+    user-select:none;
+  }
+  .rate span:hover { transform:translateY(-1px); border-color:#cbd5e1; }
+  .rate input:checked + span {
+    color:#fff; border-color:transparent; transform:scale(1.06);
+    box-shadow:0 2px 6px rgba(15,23,42,.16);
+  }
+
+  .rate-meaning { font-size:12px; font-weight:700; min-width:82px; }
+
+  .detail-toggle {
+    background:none; border:none; cursor:pointer; padding:4px 6px;
+    font-size:12px; font-weight:700; color:#6366f1;
+  }
+  .detail-box {
+    display:none; width:100%; gap:10px; flex-direction:column;
+    padding:12px; margin-top:4px; background:#f8fafc; border-radius:10px;
+  }
+  .detail-box.is-open { display:flex; }
+
+  .tag {
+    padding:6px 11px; border-radius:999px; cursor:pointer;
+    font-size:12px; font-weight:600; line-height:1.2;
+    background:#fff; color:#475569; border:1.5px solid #cbd5e1; min-height:32px;
+  }
+  .tag.is-on { background:#eef2ff; border-color:#4f46e5; color:#3730a3; }
+
+  .toolbar {
+    position:sticky; top:0; z-index:5;
+    background:#fff; border:1px solid #e2e8f0; border-radius:14px;
+    padding:14px 16px; margin-bottom:16px;
+    box-shadow:0 2px 8px rgba(15,23,42,.06);
+  }
+  .progress-track { height:8px; background:#e2e8f0; border-radius:999px; overflow:hidden; margin-top:10px; }
+  .progress-fill { height:100%; width:0; background:linear-gradient(90deg,#6366f1,#10b981); transition:width .25s; }
+
+  /* The "same score for all pillars" shortcut is secondary, so it is smaller
+     than the real scoring buttons — but never below a comfortable tap size. */
+  .rate-mini span { width:38px; height:38px; font-size:13px; background:#fff; }
+
+  @media (max-width:560px) {
+    .pillar-row { align-items:flex-start; }
+    .rate span { width:52px; height:48px; font-size:16px; }
+    .rate-mini span { width:46px; height:44px; font-size:14px; }
+    .rate-meaning { display:none; }
+  }
+</style>
+{% endblock %}
 
 {% block content %}
-<div style="max-width:1100px;margin:0 auto;">
+<div style="max-width:900px;margin:0 auto;"
+     data-last-week='{{ last_week_scores | tojson }}'
+     id="entry-root">
 
-  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
     <div>
       <span class="badge badge-info">{{ cls.display_name }}</span>
-      <span class="badge badge-purple">Subject: {{ subject }}</span>
+      <span class="badge badge-purple">{{ subject }}</span>
       <span class="badge badge-success" style="margin-left:6px;">Week {{ current_week }}, {{ current_year }}</span>
     </div>
     <div id="autosave-indicator" class="autosave-indicator">
@@ -17,257 +109,347 @@
     </div>
   </div>
 
-  <!-- Pillar Legend -->
-  <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px;">
-    {% for p in pillars %}
-    {% set label = pillar_labels.get(p, p) %}
-    <div style="display:flex;align-items:center;gap:6px;background:white;border-radius:8px;padding:6px 14px;box-shadow:0 1px 4px rgba(0,0,0,0.06);font-size:13px;font-weight:600;color:#475569;">
-      <span>{{ pillar_icons.get(p,'') }}</span> {{ label }}
+  <form method="POST" action="{{ url_for('teacher.pillar_entry') }}" id="pillar-form"
+        data-autosave style="padding-bottom:24px;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+    <input type="hidden" name="week_number" value="{{ current_week }}" />
+    <input type="hidden" name="year" value="{{ current_year }}" />
+
+    <!-- ── Shortcut bar ────────────────────────────────────────────────── -->
+    <div class="toolbar">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+        <div>
+          <div style="font-size:15px;font-weight:800;color:#1e293b;">
+            <span id="done-count">0</span> of {{ students|length * pillars|length }} scored
+          </div>
+          <div style="font-size:12.5px;color:#64748b;margin-top:2px;">Tap 1–5. Nothing else is required.</div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          {% if last_week_scores %}
+          <button type="button" class="btn btn-outline btn-sm" onclick="copyLastWeek()"
+                  style="font-weight:700;min-height:38px;">
+            ↺ Copy week {{ prev_week }}
+          </button>
+          {% endif %}
+          <button type="button" class="btn btn-outline btn-sm" onclick="fillAll(3)"
+                  style="font-weight:700;min-height:38px;" title="Set every empty score to Satisfactory">
+            Set rest to 3
+          </button>
+          <button type="button" class="btn btn-outline btn-sm" onclick="clearAll()"
+                  style="font-weight:700;min-height:38px;color:#b91c1c;border-color:#fecaca;">
+            Clear
+          </button>
+        </div>
+      </div>
+      <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
     </div>
-    {% endfor %}
-  </div>
 
-  <!-- Qualitative Scale Legend -->
-  <div style="background:#f8fafc;border-radius:12px;padding:12px 20px;margin-bottom:20px;display:flex;gap:20px;flex-wrap:wrap;">
-    <span style="font-size:12px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;margin-right:8px;">Scale:</span>
-    {% for score, label in qualitative_labels.items() %}
-    <span style="font-size:13px;color:#475569;">
-      <strong style="color:#4f46e5;">{{ score }}</strong> = {{ label }}
-    </span>
-    {% endfor %}
-  </div>
-
-  <div class="card">
-    <div class="card-header">
-      <h2>⭐ Enter Weekly Pillar Scores for {{ subject }}</h2>
-      <span style="font-size:13px;color:#64748b;">{{ students|length }} students</span>
+    <!-- ── Scale reminder ──────────────────────────────────────────────── -->
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
+      {% for score, label in qualitative_labels.items() %}
+      <span style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:#475569;
+                   background:#fff;border:1px solid #e2e8f0;border-radius:999px;padding:5px 12px;">
+        <span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;
+                     border-radius:6px;background:{{ qualitative_colors.get(score) }};color:#fff;font-weight:800;font-size:11px;">
+          {{ score }}
+        </span>{{ label }}
+      </span>
+      {% endfor %}
     </div>
 
-    <form method="POST" action="{{ url_for('teacher.pillar_entry') }}"
-          id="pillar-form" data-autosave>
-      <input type="hidden" name="week_number" value="{{ current_week }}" />
-      <input type="hidden" name="year" value="{{ current_year }}" />
-
-      <div class="table-wrapper">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th style="min-width:160px;position:sticky;left:0;background:#f8fafc;z-index:2;">Student</th>
-              {% for p in pillars %}
-              <th style="min-width:240px;text-align:center;">{{ pillar_icons.get(p,'') }} {{ pillar_labels.get(p, p) }}</th>
-              {% endfor %}
-            </tr>
-          </thead>
-          <tbody>
-            {% for student in students %}
-            <tr>
-              <td style="position:sticky;left:0;background:white;z-index:1;border-right:1px solid #f1f5f9;">
-                <div style="font-weight:600;color:#1e293b;font-size:14px;">{{ student.full_name }}</div>
-                <div style="font-size:11px;color:#94a3b8;margin-top:2px;">Roll: {{ student.roll_number }}</div>
-              </td>
-              {% for pillar in pillars %}
-              {% set existing = existing_scores.get((student.id, pillar)) %}
-              <td style="text-align:center;padding:12px 8px;vertical-align:top;border-bottom:1px solid #f1f5f9;">
-                <div style="display:flex;flex-direction:column;gap:8px;align-items:center;">
-                  
-                  <!-- Qualitative Score (1-5 radio stars) -->
-                  <div style="display:flex;gap:4px;">
-                    {% for i in range(1,6) %}
-                    <label style="cursor:pointer;" title="{{ qualitative_labels.get(i,'') }}">
-                      <input type="radio"
-                             name="qual_{{ student.id }}_{{ pillar }}"
-                             value="{{ i }}"
-                             id="qual_{{ student.id }}_{{ pillar }}_{{ i }}"
-                             {% if existing and existing.qualitative == i %}checked{% endif %}
-                             style="display:none;"
-                             onchange="updateStars('{{ student.id }}','{{ pillar }}',{{ i }});" />
-                      <span class="star-btn"
-                            id="star_{{ student.id }}_{{ pillar }}_{{ i }}"
-                            style="display:inline-block;font-size:20px;line-height:1;cursor:pointer;transition:transform 0.1s;
-                            {% if existing and existing.qualitative >= i %}color:#f59e0b;{% else %}color:#e2e8f0;{% endif %}">
-                        ★
-                      </span>
-                    </label>
-                    {% endfor %}
-                  </div>
-                  
-                  <!-- Quantitative Score (0-100) -->
-                  <div style="display:flex; align-items:center; gap:4px;">
-                    <span style="font-size:12px; color:#64748b;">Score %:</span>
-                    <input type="number"
-                           name="quant_{{ student.id }}_{{ pillar }}"
-                           class="form-control"
-                           min="0" max="100" step="0.5"
-                           value="{{ existing.quantitative_score if existing and existing.quantitative_score else '' }}"
-                           placeholder="0-100"
-                           style="width:80px;text-align:center;font-size:12px;padding:4px 6px;min-height:30px;" />
-                  </div>
-
-                  <!-- Click-First Student Milestone Remarks -->
-                  <div style="width:100%; max-width:200px;">
-                    <input type="text"
-                           name="remarks_{{ student.id }}_{{ pillar }}"
-                           id="remarks_{{ student.id }}_{{ pillar }}"
-                           class="form-control"
-                           value="{{ existing.remarks if existing and existing.remarks else '' }}"
-                           placeholder="Milestone Remark Tag"
-                           style="width:100%; font-size:11px; padding:4px 8px; min-height:28px; border-radius:6px; border:1px solid #cbd5e1;" />
-                    
-                    <div style="display:flex; gap:2px; flex-wrap:wrap; justify-content:center; margin-top:4px;">
-                      {% for tag in ['Attentive', 'Needs Reading Drill', 'Math Concept Clear', 'Incomplete Homework', 'Needs Practice'] %}
-                      <button type="button" class="btn btn-outline"
-                              style="font-size:9px; padding:2px 4px; min-height:18px; border-color:#e2e8f0; color:#4f46e5;"
-                              title="{{ tag }}"
-                              onclick="setRemarkTag('{{ student.id }}', '{{ pillar }}', '{{ tag }}')">
-                        {{ tag.split(' ')[0] }}{% if tag.split(' ')|length > 1 %}..{% endif %}
-                      </button>
-                      {% endfor %}
-                    </div>
-                  </div>
-
-                  <!-- Media Upload & Compression -->
-                  <div style="display:flex; align-items:center; gap:4px; margin-top:2px;">
-                    <input type="hidden"
-                           name="photo_{{ student.id }}_{{ pillar }}_base64"
-                           id="photo_{{ student.id }}_{{ pillar }}_base64"
-                           value="{{ existing.photo_base64 if existing and existing.photo_base64 else '' }}" />
-                    
-                    <label class="btn btn-outline" style="font-size:11px; padding:4px 8px; min-height:28px; cursor:pointer; display:flex; align-items:center; gap:4px; border-color:#cbd5e1; color:#334155;">
-                      <span>📷</span>
-                      <input type="file" accept="image/*" style="display:none;"
-                             onchange="compressPillarPhoto(this, '{{ student.id }}', '{{ pillar }}')" />
-                      <span id="photo_label_{{ student.id }}_{{ pillar }}">
-                        {% if existing and existing.photo_base64 %}✓ Photo{% else %}Attach{% endif %}
-                      </span>
-                    </label>
-                    <button type="button" id="photo_clear_{{ student.id }}_{{ pillar }}" class="btn btn-sm btn-danger"
-                            style="display:{% if existing and existing.photo_base64 %}block{% else %}none{% endif %}; padding:4px 8px; font-size:10px; min-height:28px;"
-                            onclick="clearPillarPhoto('{{ student.id }}', '{{ pillar }}')">
-                      ✕
-                    </button>
-                  </div>
-
-                </div>
-              </td>
-              {% endfor %}
-            </tr>
-            {% else %}
-            <tr>
-              <td colspan="{{ pillars|length + 1 }}" style="text-align:center;padding:32px;color:#94a3b8;">
-                No students in this class.
-              </td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
+    <!-- ── Students ────────────────────────────────────────────────────── -->
+    {% for student in students %}
+    <div class="stu-card" data-student="{{ student.id }}">
+      <div class="stu-head">
+        <span class="stu-roll">{{ student.roll_number }}</span>
+        <span class="stu-name">{{ student.full_name }}</span>
+        <span class="stu-done" data-student-progress="{{ student.id }}">0/{{ pillars|length }}</span>
       </div>
 
-      <div style="padding:20px 24px;border-top:1px solid #f1f5f9;display:flex;gap:12px;">
-        <button type="submit" class="btn btn-primary btn-lg" style="flex:1;">
-          💾 Save Week {{ current_week }} Scores for {{ subject }}
-        </button>
-        <a href="{{ url_for('teacher.dashboard') }}" class="btn btn-outline btn-lg">Cancel</a>
+      {% if pillars|length > 1 %}
+      <div class="pillar-row" style="background:#fcfcfd;border-top:none;">
+        <div class="pillar-name" style="color:#64748b;font-weight:600;font-size:12.5px;">
+          Same score for all {{ pillars|length }} pillars →
+        </div>
+        <div class="rate rate-mini">
+          {% for i in range(1,6) %}
+          <label>
+            <span onclick="setStudentRow('{{ student.id }}', {{ i }})"
+                  title="Set all pillars to {{ qualitative_labels.get(i) }}">{{ i }}</span>
+          </label>
+          {% endfor %}
+        </div>
       </div>
-    </form>
-  </div>
+      {% endif %}
 
+      {% for pillar in pillars %}
+      {% set existing = existing_scores.get((student.id, pillar)) %}
+      {% set cell = student.id ~ '_' ~ pillar %}
+      <div class="pillar-row">
+        <div class="pillar-name">
+          <span>{{ pillar_icons.get(pillar,'') }}</span>{{ pillar_labels.get(pillar, pillar) }}
+        </div>
+
+        <div class="rate" data-cell="{{ cell }}">
+          {% for i in range(1,6) %}
+          <label>
+            <input type="radio" name="qual_{{ cell }}" value="{{ i }}"
+                   id="qual_{{ cell }}_{{ i }}"
+                   data-color="{{ qualitative_colors.get(i) }}"
+                   data-percent="{{ qualitative_percent.get(i) }}"
+                   data-meaning="{{ qualitative_labels.get(i) }}"
+                   {% if existing and existing.qualitative == i %}checked{% endif %} />
+            <span style="{% if existing and existing.qualitative == i %}background:{{ qualitative_colors.get(i) }};{% endif %}"
+                  title="{{ qualitative_labels.get(i) }}">{{ i }}</span>
+          </label>
+          {% endfor %}
+        </div>
+
+        <span class="rate-meaning" data-meaning-for="{{ cell }}"
+              style="color:{{ qualitative_colors.get(existing.qualitative) if existing else '#cbd5e1' }};">
+          {{ qualitative_labels.get(existing.qualitative, '—') if existing else '—' }}
+        </span>
+
+        <button type="button" class="detail-toggle" onclick="toggleDetail('{{ cell }}')"
+                aria-expanded="false">＋ details</button>
+
+        <!-- Optional extras. Hidden by default so the common path stays one tap. -->
+        <div class="detail-box" id="detail_{{ cell }}">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <label for="quant_{{ cell }}" style="font-size:12.5px;font-weight:600;color:#475569;margin:0;">
+              Exact %
+            </label>
+            <input type="number" id="quant_{{ cell }}" name="quant_{{ cell }}"
+                   class="form-control" min="0" max="100" step="0.5"
+                   value="{{ existing.quantitative_score if existing and existing.quantitative_score is not none else '' }}"
+                   data-auto-percent
+                   style="width:96px;text-align:center;font-size:13px;padding:5px 8px;min-height:34px;" />
+            <span style="font-size:12px;color:#94a3b8;">Leave blank to use the star score</span>
+          </div>
+
+          <div>
+            <div style="font-size:12.5px;font-weight:600;color:#475569;margin-bottom:6px;">Milestone note</div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;">
+              {% for tag in milestone_tags %}
+              <button type="button" class="tag" data-tag="{{ tag }}" data-cell="{{ cell }}"
+                      onclick="toggleTag(this)">{{ tag }}</button>
+              {% endfor %}
+            </div>
+            <input type="hidden" name="remarks_{{ cell }}" id="remarks_{{ cell }}"
+                   value="{{ existing.remarks if existing and existing.remarks else '' }}" />
+          </div>
+
+          <div style="display:flex;align-items:center;gap:8px;">
+            <input type="hidden" name="photo_{{ cell }}_base64" id="photo_{{ cell }}_base64"
+                   value="{{ existing.photo_base64 if existing and existing.photo_base64 else '' }}" />
+            <label class="btn btn-outline btn-sm" style="cursor:pointer;font-size:12px;min-height:32px;">
+              📷 <span id="photo_label_{{ cell }}">{% if existing and existing.photo_base64 %}Photo attached{% else %}Attach photo{% endif %}</span>
+              <input type="file" accept="image/*" capture="environment" style="display:none;"
+                     onchange="compressPhoto(this, '{{ cell }}')" />
+            </label>
+            <button type="button" id="photo_clear_{{ cell }}" class="btn btn-sm btn-danger"
+                    style="display:{% if existing and existing.photo_base64 %}inline-flex{% else %}none{% endif %};font-size:11px;min-height:32px;"
+                    onclick="clearPhoto('{{ cell }}')">✕</button>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="card" style="text-align:center;padding:40px;color:#94a3b8;">No students in this class.</div>
+    {% endfor %}
+
+    <div style="position:sticky;bottom:0;background:#fff;border-top:1px solid #e2e8f0;
+                padding:14px;display:flex;gap:12px;border-radius:14px 14px 0 0;box-shadow:0 -2px 10px rgba(15,23,42,.06);">
+      <button type="submit" class="btn btn-primary btn-lg" style="flex:1;min-height:52px;font-size:16px;">
+        💾 Save Week {{ current_week }}
+      </button>
+      <a href="{{ url_for('teacher.dashboard') }}" class="btn btn-outline btn-lg">Cancel</a>
+    </div>
+  </form>
 </div>
 {% endblock %}
 
 {% block extra_scripts %}
 <script>
-function updateStars(studentId, pillar, rating) {
-  for (let i = 1; i <= 5; i++) {
-    const star = document.getElementById(`star_${studentId}_${pillar}_${i}`);
-    if (star) {
-      star.style.color = i <= rating ? '#f59e0b' : '#e2e8f0';
-      star.style.transform = i === rating ? 'scale(1.3)' : 'scale(1)';
+(function () {
+  const form = document.getElementById('pillar-form');
+  const root = document.getElementById('entry-root');
+  const lastWeek = JSON.parse(root.dataset.lastWeek || '{}');
+  const totalCells = document.querySelectorAll('.rate[data-cell]').length;
+
+  function notifyAutosave() { form.dispatchEvent(new Event('change')); }
+
+  /** Paint one cell to match its selected rating. */
+  function paintCell(cell) {
+    const group = document.querySelector(`.rate[data-cell="${cell}"]`);
+    if (!group) return;
+    const checked = group.querySelector('input:checked');
+
+    group.querySelectorAll('input').forEach(input => {
+      input.nextElementSibling.style.background =
+        (checked && input === checked) ? input.dataset.color : '';
+    });
+
+    const meaning = document.querySelector(`[data-meaning-for="${cell}"]`);
+    if (meaning) {
+      meaning.textContent = checked ? checked.dataset.meaning : '—';
+      meaning.style.color = checked ? checked.dataset.color : '#cbd5e1';
     }
   }
-}
 
-// Click on star span → check radio
-document.querySelectorAll('.star-btn').forEach(star => {
-  star.addEventListener('click', function() {
-    const parts = this.id.split('_'); // star_STUID_PILLAR_RATING
-    const rating = parseInt(parts[parts.length - 1]);
-    const pillar = parts.slice(2, -1).join('_');
-    const studentId = parts[1];
-    const radio = document.getElementById(`qual_${studentId}_${pillar}_${rating}`);
-    if (radio) {
-      radio.checked = true;
-      updateStars(studentId, pillar, rating);
-      document.getElementById('pillar-form').dispatchEvent(new Event('change'));
-    }
-  });
+  function refreshProgress() {
+    let done = 0;
+    document.querySelectorAll('.rate[data-cell]').forEach(group => {
+      if (group.querySelector('input:checked')) done++;
+    });
+    document.getElementById('done-count').textContent = done;
+    document.getElementById('progress-fill').style.width =
+      totalCells ? `${(done / totalCells) * 100}%` : '0%';
 
-  star.addEventListener('mouseover', function() {
-    this.style.transform = 'scale(1.2)';
-  });
-  star.addEventListener('mouseout', function() {
-    this.style.transform = 'scale(1)';
-  });
-});
-
-// Click-First Milestone Remarks handler
-function setRemarkTag(studentId, pillar, tag) {
-  const input = document.getElementById(`remarks_${studentId}_${pillar}`);
-  if (input) {
-    input.value = `[${tag}]`;
-    // Trigger change event to fire autosave
-    input.dispatchEvent(new Event('change'));
+    document.querySelectorAll('[data-student-progress]').forEach(badge => {
+      const id = badge.dataset.studentProgress;
+      const groups = document.querySelectorAll(`.stu-card[data-student="${id}"] .rate[data-cell]`);
+      const filled = [...groups].filter(g => g.querySelector('input:checked')).length;
+      badge.textContent = `${filled}/${groups.length}`;
+      badge.classList.toggle('is-complete', filled === groups.length && groups.length > 0);
+    });
   }
-}
 
-// Image compression and resize (max width/height 640px, JPEG quality 0.6)
-function compressPillarPhoto(inputEl, studentId, pillar) {
-  const file = inputEl.files[0];
-  if (!file) return;
+  /** Select a rating and mirror the implied percentage into the % box. */
+  function choose(cell, value, { force = true } = {}) {
+    const input = document.getElementById(`qual_${cell}_${value}`);
+    if (!input) return false;
+    if (!force && document.querySelector(`.rate[data-cell="${cell}"] input:checked`)) return false;
 
-  const reader = new FileReader();
-  reader.onload = function(e) {
-    const img = new Image();
-    img.onload = function() {
-      const canvas = document.createElement('canvas');
-      let width = img.width;
-      let height = img.height;
-      const MAX_DIM = 640;
+    input.checked = true;
+    paintCell(cell);
 
-      if (width > MAX_DIM || height > MAX_DIM) {
-        if (width > height) {
-          height = Math.round((height * MAX_DIM) / width);
-          width = MAX_DIM;
-        } else {
-          width = Math.round((width * MAX_DIM) / height);
-          height = MAX_DIM;
-        }
-      }
+    // Keep the % box in step with the stars unless the teacher typed their own.
+    const quant = document.getElementById(`quant_${cell}`);
+    if (quant && quant.dataset.autoPercent !== undefined && !quant.dataset.manual) {
+      quant.value = input.dataset.percent;
+    }
+    return true;
+  }
 
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0, width, height);
+  // Tapping a rating button.
+  document.querySelectorAll('.rate[data-cell] input').forEach(input => {
+    input.addEventListener('change', () => {
+      const cell = input.closest('.rate').dataset.cell;
+      choose(cell, input.value);
+      refreshProgress();
+      notifyAutosave();
+    });
+  });
 
-      // Compress to JPEG format with 60% quality
-      const base64 = canvas.toDataURL('image/jpeg', 0.6);
+  // A typed percentage wins over the derived one from then on.
+  document.querySelectorAll('[data-auto-percent]').forEach(box => {
+    box.addEventListener('input', () => { box.dataset.manual = '1'; });
+  });
 
-      document.getElementById(`photo_${studentId}_${pillar}_base64`).value = base64;
-      document.getElementById(`photo_label_${studentId}_${pillar}`).textContent = '✓ Photo';
-      document.getElementById(`photo_clear_${studentId}_${pillar}`).style.display = 'block';
-
-      // Dispatch change event to trigger local autosave
-      document.getElementById(`photo_${studentId}_${pillar}_base64`).dispatchEvent(new Event('change'));
-    };
-    img.src = e.target.result;
+  window.setStudentRow = function (studentId, value) {
+    document.querySelectorAll(`.stu-card[data-student="${studentId}"] .rate[data-cell]`)
+      .forEach(group => choose(group.dataset.cell, value));
+    refreshProgress();
+    notifyAutosave();
   };
-  reader.readAsDataURL(file);
-}
 
-function clearPillarPhoto(studentId, pillar) {
-  document.getElementById(`photo_${studentId}_${pillar}_base64`).value = '';
-  document.getElementById(`photo_label_${studentId}_${pillar}`).textContent = 'Attach';
-  document.getElementById(`photo_clear_${studentId}_${pillar}`).style.display = 'none';
-  document.getElementById(`photo_${studentId}_${pillar}_base64`).dispatchEvent(new Event('change'));
-}
+  window.copyLastWeek = function () {
+    let applied = 0;
+    Object.entries(lastWeek).forEach(([cell, value]) => {
+      if (choose(cell, value, { force: false })) applied++;
+    });
+    refreshProgress();
+    notifyAutosave();
+    alert(applied
+      ? `Copied ${applied} score${applied === 1 ? '' : 's'} from last week. Adjust anything that changed, then save.`
+      : 'Every student already has a score this week, so nothing was copied.');
+  };
+
+  window.fillAll = function (value) {
+    document.querySelectorAll('.rate[data-cell]').forEach(group => {
+      choose(group.dataset.cell, value, { force: false });
+    });
+    refreshProgress();
+    notifyAutosave();
+  };
+
+  window.clearAll = function () {
+    if (!confirm('Clear every score on this page? Saved scores stay until you press Save.')) return;
+    document.querySelectorAll('.rate[data-cell]').forEach(group => {
+      group.querySelectorAll('input').forEach(i => { i.checked = false; });
+      paintCell(group.dataset.cell);
+    });
+    refreshProgress();
+    notifyAutosave();
+  };
+
+  window.toggleDetail = function (cell) {
+    const box = document.getElementById(`detail_${cell}`);
+    const open = box.classList.toggle('is-open');
+    const btn = box.parentElement.querySelector('.detail-toggle');
+    btn.textContent = open ? '− details' : '＋ details';
+    btn.setAttribute('aria-expanded', String(open));
+  };
+
+  window.toggleTag = function (btn) {
+    const field = document.getElementById(`remarks_${btn.dataset.cell}`);
+    const tag = btn.dataset.tag;
+    const tags = field.value.split(',').map(t => t.trim()).filter(Boolean);
+    const at = tags.findIndex(t => t.toLowerCase() === tag.toLowerCase());
+
+    if (at >= 0) { tags.splice(at, 1); btn.classList.remove('is-on'); }
+    else { tags.push(tag); btn.classList.add('is-on'); }
+
+    field.value = tags.join(', ');
+    notifyAutosave();
+  };
+
+  window.compressPhoto = function (inputEl, cell) {
+    const file = inputEl.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = e => {
+      const img = new Image();
+      img.onload = () => {
+        const MAX_DIM = 640;
+        let { width, height } = img;
+        if (width > MAX_DIM || height > MAX_DIM) {
+          if (width > height) { height = Math.round(height * MAX_DIM / width); width = MAX_DIM; }
+          else { width = Math.round(width * MAX_DIM / height); height = MAX_DIM; }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width; canvas.height = height;
+        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+
+        document.getElementById(`photo_${cell}_base64`).value = canvas.toDataURL('image/jpeg', 0.6);
+        document.getElementById(`photo_label_${cell}`).textContent = 'Photo attached';
+        document.getElementById(`photo_clear_${cell}`).style.display = 'inline-flex';
+        notifyAutosave();
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  window.clearPhoto = function (cell) {
+    document.getElementById(`photo_${cell}_base64`).value = '';
+    document.getElementById(`photo_label_${cell}`).textContent = 'Attach photo';
+    document.getElementById(`photo_clear_${cell}`).style.display = 'none';
+    notifyAutosave();
+  };
+
+  // Reflect saved milestone tags on load.
+  document.querySelectorAll('[data-tag][data-cell]').forEach(btn => {
+    const field = document.getElementById(`remarks_${btn.dataset.cell}`);
+    if (field && field.value.toLowerCase().includes(btn.dataset.tag.toLowerCase())) {
+      btn.classList.add('is-on');
+    }
+  });
+
+  document.querySelectorAll('.rate[data-cell]').forEach(g => paintCell(g.dataset.cell));
+  refreshProgress();
+})();
 </script>
 {% endblock %}

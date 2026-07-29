@@ -1,14 +1,19 @@
 """
 Database initializer for Chandrabhan Singh Public School.
-Initializes tables, default master accounts, and academic session structure (2026-27).
+Initializes tables, master accounts, and academic session structure.
 
 CRITICAL PRODUCTION RULES:
   - NEVER drops existing tables or overwrites existing user data.
   - Creates master accounts ONLY if the database is completely empty.
   - Zero dummy data (no sample students, daily logs, attendance, or pillar scores).
+  - NO hardcoded passwords. Bootstrap credentials come from environment
+    variables, or are randomly generated and printed once to the deploy log.
+    A password literal committed to the repository hands a super-admin account
+    to anyone who can read the source.
 """
-import sys
 import os
+import sys
+import secrets
 
 # Allow importing from parent directory
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -16,6 +21,18 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from app import create_app
 from app.extensions import db
 from app.models import User, Class, TeacherClassSubject
+
+
+def _bootstrap_password(env_var: str) -> tuple[str, bool]:
+    """
+    Read a bootstrap password from the environment, or generate a strong random
+    one. Returns (password, was_generated) so generated values can be surfaced
+    exactly once at creation time.
+    """
+    supplied = os.environ.get(env_var, '').strip()
+    if supplied:
+        return supplied, False
+    return secrets.token_urlsafe(12), True
 
 
 def seed(app_instance=None):
@@ -33,40 +50,51 @@ def seed(app_instance=None):
             print("[INFO] Existing database detected. Preserving all records and user data.")
             return
 
-        print("[*] Empty database detected. Initializing master accounts & academic structure (2026-27)...")
+        print("[*] Empty database detected. Initializing master accounts & academic structure...")
+
+        generated_credentials = []
 
         # ── 1. Master Login Accounts ───────────────────────────────────────
-        if not User.query.filter_by(username='principal').first():
-            admin = User(username='principal', full_name='Principal Admin', role='admin')
-            admin.set_password('admin123')
-            db.session.add(admin)
-            print("[OK] Admin account created: principal / admin123")
+        admin_pw, admin_generated = _bootstrap_password('BOOTSTRAP_ADMIN_PASSWORD')
+        admin = User(username='principal', full_name='Principal Admin', role='admin')
+        admin.set_password(admin_pw)
+        db.session.add(admin)
+        if admin_generated:
+            generated_credentials.append(('principal', admin_pw))
+        print("[OK] Admin account created: principal")
 
-        if not User.query.filter_by(username='director').first():
-            director = User(username='director', full_name='Director / Super-Admin', role='director')
-            director.set_password('director123')
-            db.session.add(director)
-            print("[OK] Director super-admin account created: director / director123")
+        director_pw, director_generated = _bootstrap_password('BOOTSTRAP_DIRECTOR_PASSWORD')
+        director = User(username='director', full_name='Director / Super-Admin', role='director')
+        director.set_password(director_pw)
+        db.session.add(director)
+        if director_generated:
+            generated_credentials.append(('director', director_pw))
+        print("[OK] Director super-admin account created: director")
 
         teacher_data = [
-            ('teacher1', 'Mrs. Sunita Devi',  'teacher123'),
-            ('teacher2', 'Mr. Ramesh Kumar',   'teacher123'),
-            ('teacher3', 'Mrs. Priya Sharma',  'teacher123'),
-            ('teacher4', 'Mr. Ajay Singh',     'teacher123'),
-            ('teacher5', 'Mrs. Kavita Rao',    'teacher123'),
+            ('teacher1', 'Mrs. Sunita Devi'),
+            ('teacher2', 'Mr. Ramesh Kumar'),
+            ('teacher3', 'Mrs. Priya Sharma'),
+            ('teacher4', 'Mr. Ajay Singh'),
+            ('teacher5', 'Mrs. Kavita Rao'),
         ]
+        shared_teacher_pw = os.environ.get('BOOTSTRAP_TEACHER_PASSWORD', '').strip()
+
         teachers = []
-        for uname, fname, pw in teacher_data:
-            t = User.query.filter_by(username=uname).first()
-            if not t:
-                t = User(username=uname, full_name=fname, role='teacher')
+        for uname, fname in teacher_data:
+            t = User(username=uname, full_name=fname, role='teacher')
+            if shared_teacher_pw:
+                t.set_password(shared_teacher_pw)
+            else:
+                pw = secrets.token_urlsafe(12)
                 t.set_password(pw)
-                db.session.add(t)
-                db.session.flush()
+                generated_credentials.append((uname, pw))
+            db.session.add(t)
+            db.session.flush()
             teachers.append(t)
         print(f"[OK] {len(teachers)} default teacher accounts ready.")
 
-        # ── 2. Class Structure (Nursery to Class 10, Sections A & B - 2026-27) ─
+        # ── 2. Class Structure (Nursery to Class 10, Sections A & B) ───────
         academic_year = app.config.get('ACADEMIC_YEAR', '2026-27')
         classes = []
         grades = [-3, -2, -1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
@@ -110,14 +138,28 @@ def seed(app_instance=None):
         print("[OK] Default teacher class-subject mappings initialized.")
 
         db.session.commit()
+
         print("\n[DONE] Production database setup complete (Zero dummy logs/records).")
-        print("-" * 50)
+        print("-" * 70)
         print(f"  Academic Session: {academic_year}")
-        print("  Director login:   director / director123")
-        print("  Admin login:      principal / admin123")
-        print("  Teacher logins:   teacher1-teacher5 / teacher123")
-        print("-" * 50)
+        if generated_credentials:
+            print("  ONE-TIME GENERATED PASSWORDS — copy these now, they are not stored")
+            print("  anywhere in readable form and will NOT be shown again:")
+            for uname, pw in generated_credentials:
+                print(f"    {uname:<12} {pw}")
+            print("  Set BOOTSTRAP_ADMIN_PASSWORD / BOOTSTRAP_DIRECTOR_PASSWORD /")
+            print("  BOOTSTRAP_TEACHER_PASSWORD to choose these yourself instead.")
+        else:
+            print("  Passwords were taken from the BOOTSTRAP_*_PASSWORD environment variables.")
+        print("-" * 70)
 
 
 if __name__ == '__main__':
-    seed()
+    # Some deployments still call this from their build step. Seeding also runs
+    # automatically at startup, so a failure here (for example, the build
+    # machine cannot reach the database) must not fail the whole deploy.
+    try:
+        seed()
+    except Exception as exc:
+        print(f'[WARN] Could not seed during build: {type(exc).__name__}: {exc}')
+        print('[WARN] This is not fatal. The application seeds itself on startup.')

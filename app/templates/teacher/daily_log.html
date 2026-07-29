@@ -2,11 +2,60 @@
 {% block title %}Daily Log{% endblock %}
 {% block page_title %}Daily Log — {{ today.strftime('%d %b %Y') }}{% endblock %}
 
+{% block extra_head %}
+<style>
+  /* Tap-first controls. Everything is at least 44px so it works with a finger
+     on a phone, and every common answer is reachable without the keyboard. */
+  .chip {
+    display:inline-flex; align-items:center; gap:6px;
+    padding:9px 14px; border-radius:999px; cursor:pointer;
+    font-size:14px; font-weight:600; line-height:1.2;
+    background:#fff; color:#334155; border:1.5px solid #cbd5e1;
+    transition:background .12s, border-color .12s, color .12s;
+    min-height:40px;
+  }
+  .chip:hover { background:#f1f5f9; }
+  .chip.is-on { background:#eef2ff; border-color:#4f46e5; color:#3730a3; }
+  .chip-row { display:flex; flex-wrap:wrap; gap:8px; }
+
+  .pick-label { font-size:13px; font-weight:700; color:#475569; margin-bottom:8px; display:block; }
+  .hint { font-size:12.5px; color:#94a3b8; margin-top:6px; }
+
+  /* Big three-way status picker */
+  .status-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+  .status-opt input { position:absolute; opacity:0; pointer-events:none; }
+  .status-opt span {
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px;
+    padding:14px 8px; border-radius:14px; cursor:pointer; text-align:center;
+    border:2px solid #e2e8f0; background:#fff; color:#64748b;
+    font-weight:700; font-size:14px; min-height:76px; transition:all .12s;
+  }
+  .status-opt input:checked + span { border-color:currentColor; }
+  .status-opt.s-on_track input:checked + span { background:#ecfdf5; color:#047857; }
+  .status-opt.s-delayed  input:checked + span { background:#fef2f2; color:#b91c1c; }
+  .status-opt.s-ahead    input:checked + span { background:#eff6ff; color:#1d4ed8; }
+  .status-opt .em { font-size:22px; line-height:1; }
+
+  /* Yes/no toggle cards */
+  .toggle-card {
+    display:flex; align-items:center; gap:14px; width:100%;
+    padding:14px 16px; border-radius:14px; cursor:pointer;
+    border:2px solid #e2e8f0; background:#fff; transition:all .12s; margin:0;
+  }
+  .toggle-card input { width:24px; height:24px; accent-color:#4f46e5; flex-shrink:0; }
+  .toggle-card.is-on { border-color:#4f46e5; background:#f5f3ff; }
+
+  @media (max-width:520px) {
+    .status-grid { grid-template-columns:1fr; }
+    .status-opt span { flex-direction:row; gap:10px; min-height:56px; }
+  }
+</style>
+{% endblock %}
+
 {% block content %}
 <div style="max-width:720px;margin:0 auto;">
 
-  <!-- Autosave indicator -->
-  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
     <div>
       <span class="badge badge-info">{{ cls.display_name }}</span>
       <span class="badge badge-purple" style="margin-left:6px;">{{ subject }}</span>
@@ -22,113 +71,143 @@
     <div class="card-header">
       <h2>📝 {{ 'Update' if log else 'Submit' }} Log for {{ subject }}</h2>
       {% if log %}
-      <span class="badge badge-success">✓ Already submitted at {{ log.submitted_at.strftime('%H:%M') }}</span>
+      <span class="badge badge-success">✓ Submitted at {{ log.submitted_at.strftime('%H:%M') }}</span>
       {% endif %}
     </div>
     <div class="card-body">
       <form method="POST" action="{{ url_for('teacher.daily_log') }}"
             id="daily-log-form" data-autosave>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
 
-        <!-- Lesson Completed -->
+        <!-- ── 1. What did you teach? ─────────────────────────────────── -->
         <div class="form-group">
-          <label class="form-check" for="lesson-check" style="cursor:pointer;">
-            <input type="checkbox" id="lesson-check" name="lesson_completed"
-                   {% if log and log.lesson_completed %}checked{% endif %}
-                   style="width:22px;height:22px;accent-color:#4f46e5;" />
-            <div>
-              <span style="font-weight:700;color:#1e293b;font-size:15px;">Lesson Completed</span>
-              <div style="font-size:13px;color:#64748b;margin-top:2px;">Check if today's planned lesson was covered</div>
+          <label class="pick-label" for="syllabus-topic">1 · Topic taught today</label>
+
+          {% if last_log %}
+          <!-- Repeating or continuing yesterday's topic is the common case, so
+               it gets a single dedicated button rather than retyping. -->
+          <div style="background:#f5f3ff;border:1.5px solid #ddd6fe;border-radius:12px;padding:12px 14px;margin-bottom:10px;">
+            <div style="font-size:12px;font-weight:700;color:#6d28d9;text-transform:uppercase;letter-spacing:.04em;">
+              Last lesson · {{ last_log.log_date.strftime('%d %b') }}
             </div>
-          </label>
-        </div>
-
-        <!-- Syllabus Topic -->
-        <div class="form-group">
-          <label class="form-label" for="syllabus-topic">Topic / Chapter Covered</label>
-          
-          <!-- Click-First Status Pills -->
-          <div style="margin-bottom:10px; display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
-            <span style="font-size:12px; font-weight:700; color:#64748b; text-transform:uppercase; letter-spacing:0.04em;">Quick Status:</span>
-            {% for opt in ['Concept Taught', 'Revision Done', 'Class Test Taken', 'Doubt Session', 'Syllabus Delayed'] %}
-            <button type="button" class="btn btn-sm btn-outline text-indigo-600 border-indigo-200 hover:bg-indigo-50" 
-                    style="font-size:12px; padding:4px 10px; min-height:28px;"
-                    onclick="selectStatusPill('{{ opt }}')">
-              + {{ opt }}
-            </button>
-            {% endfor %}
+            <div style="font-size:14px;color:#1e293b;margin:4px 0 10px;font-weight:600;">{{ last_log.syllabus_topic }}</div>
+            <div class="chip-row">
+              <button type="button" class="chip" onclick="setTopic(this.dataset.topic)"
+                      data-topic="{{ last_log.syllabus_topic }}">↻ Same topic</button>
+              <button type="button" class="chip" onclick="continueTopic(this.dataset.topic)"
+                      data-topic="{{ last_log.syllabus_topic }}">→ Continued</button>
+            </div>
           </div>
+          {% endif %}
+
+          {% if recent_topics %}
+          <div style="margin-bottom:10px;">
+            <span class="pick-label" style="font-weight:600;color:#64748b;">Recent topics — tap to reuse</span>
+            <div class="chip-row">
+              {% for topic in recent_topics %}
+              <button type="button" class="chip" onclick="setTopic(this.dataset.topic)"
+                      data-topic="{{ topic }}" title="{{ topic }}">
+                {{ topic if topic|length <= 34 else topic[:32] ~ '…' }}
+              </button>
+              {% endfor %}
+            </div>
+          </div>
+          {% endif %}
 
           <input type="text" id="syllabus-topic" name="syllabus_topic"
-                 class="form-control"
+                 class="form-control" list="topic-suggestions"
                  value="{{ log.syllabus_topic if log else '' }}"
-                 placeholder="e.g. Chapter 5: Fractions — Addition and Subtraction"
-                 maxlength="200" />
+                 placeholder="Type only if it is a new topic…"
+                 maxlength="200" style="font-size:15px;" />
+          <datalist id="topic-suggestions">
+            {% for topic in recent_topics %}<option value="{{ topic }}"></option>{% endfor %}
+          </datalist>
+          <div class="hint">Tap a chip above, or start typing to see your past topics.</div>
         </div>
 
-        <!-- Syllabus Status -->
+        <!-- ── 2. Progress ─────────────────────────────────────────────── -->
         <div class="form-group">
-          <label class="form-label" for="syllabus-status">Syllabus Progress Status</label>
-          <select id="syllabus-status" name="syllabus_status" class="form-control form-select">
+          <label class="pick-label">2 · Syllabus progress</label>
+          <div class="status-grid">
+            {% set status_icons = {'on_track':'✅', 'delayed':'⚠️', 'ahead':'🚀'} %}
             {% for key, label in syllabus_statuses.items() %}
-            <option value="{{ key }}"
-              {% if log and log.syllabus_status == key %}selected
-              {% elif not log and key == 'on_track' %}selected
-              {% endif %}>
-              {% if key == 'on_track' %}✅ {% elif key == 'delayed' %}⚠️ {% else %}🚀 {% endif %}{{ label }}
-            </option>
+            <label class="status-opt s-{{ key }}">
+              <input type="radio" name="syllabus_status" value="{{ key }}"
+                {% if log and log.syllabus_status == key %}checked
+                {% elif not log and key == 'on_track' %}checked{% endif %} />
+              <span>
+                <span class="em">{{ status_icons.get(key, '•') }}</span>
+                <span>{{ label }}</span>
+              </span>
+            </label>
             {% endfor %}
-          </select>
+          </div>
         </div>
 
-        <!-- Homework Assigned -->
+        <!-- ── 3. Yes / no ─────────────────────────────────────────────── -->
         <div class="form-group">
-          <label class="form-check" for="hw-check" style="cursor:pointer;">
-            <input type="checkbox" id="hw-check" name="homework_assigned"
-                   {% if log and log.homework_assigned %}checked{% endif %}
-                   style="width:22px;height:22px;accent-color:#4f46e5;" />
-            <div>
-              <span style="font-weight:700;color:#1e293b;font-size:15px;">Homework Assigned</span>
-              <div style="font-size:13px;color:#64748b;margin-top:2px;">Check if homework was given to students today</div>
+          <label class="pick-label">3 · Today's class</label>
+          <div style="display:flex;flex-direction:column;gap:10px;">
+            <label class="toggle-card {% if log and log.lesson_completed %}is-on{% endif %}" data-toggle-card>
+              <input type="checkbox" name="lesson_completed"
+                     {% if log and log.lesson_completed %}checked{% endif %} />
+              <div>
+                <span style="font-weight:700;color:#1e293b;font-size:15px;">Lesson completed</span>
+                <div style="font-size:13px;color:#64748b;margin-top:2px;">The planned lesson was covered</div>
+              </div>
+            </label>
+
+            <label class="toggle-card {% if log and log.homework_assigned %}is-on{% endif %}" data-toggle-card>
+              <input type="checkbox" name="homework_assigned"
+                     {% if log and log.homework_assigned %}checked{% endif %} />
+              <div>
+                <span style="font-weight:700;color:#1e293b;font-size:15px;">Homework assigned</span>
+                <div style="font-size:13px;color:#64748b;margin-top:2px;">Homework was given to students</div>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <!-- ── 4. Notes (tap, don't type) ──────────────────────────────── -->
+        <div class="form-group">
+          <label class="pick-label" for="remarks">4 · Notes <span style="font-weight:400;color:#94a3b8;">(optional)</span></label>
+          <div class="chip-row" style="margin-bottom:10px;">
+            {% for note in quick_notes %}
+            <button type="button" class="chip" data-note="{{ note }}" onclick="toggleNote(this)">{{ note }}</button>
+            {% endfor %}
+          </div>
+          <textarea id="remarks" name="remarks" class="form-control" rows="3"
+                    placeholder="Tap a note above, or write here only if needed…">{{ log.remarks if log else '' }}</textarea>
+        </div>
+
+        <!-- ── 5. Optional photo ──────────────────────────────────────── -->
+        <details style="margin-bottom:20px;border:1.5px solid #e2e8f0;border-radius:12px;padding:12px 16px;"
+                 {% if log and log.photo_base64 %}open{% endif %}>
+          <summary style="cursor:pointer;font-weight:700;color:#334155;font-size:14px;">
+            📸 Attach blackboard / worksheet photo
+            <span style="font-weight:400;color:#94a3b8;">— optional</span>
+          </summary>
+          <div style="margin-top:12px;">
+            <input type="hidden" id="photo-base64" name="photo_base64"
+                   value="{{ log.photo_base64 if log and log.photo_base64 else '' }}" />
+            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+              <input type="file" id="photo-file" accept="image/*" capture="environment"
+                     class="form-control" style="flex:1;min-width:200px;padding:6px;" />
+              <button type="button" id="clear-photo-btn" class="btn btn-sm btn-danger"
+                      style="display:{% if log and log.photo_base64 %}inline-flex{% else %}none{% endif %};"
+                      onclick="clearPhoto()">Clear</button>
             </div>
-          </label>
-        </div>
-
-        <!-- Media Attachment -->
-        <div class="form-group" style="background:#f8fafc; padding:16px; border-radius:12px; border:2px dashed #cbd5e1;">
-          <label class="form-label" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-            <span style="display:flex; align-items:center; gap:6px; font-weight:700; color:#334155;">📸 Blackboard / Worksheet Photo</span>
-            <span style="font-size:11px; color:#64748b; font-weight:500; background:#e2e8f0; padding:2px 8px; border-radius:12px;">Auto-Compressed &lt; 200KB</span>
-          </label>
-          
-          <!-- Hidden Base64 Field -->
-          <input type="hidden" id="photo-base64" name="photo_base64" value="{{ log.photo_base64 if log and log.photo_base64 else '' }}" />
-          
-          <div style="display:flex; align-items:center; gap:12px; margin-bottom:10px;">
-            <input type="file" id="photo-file" accept="image/*" class="form-control" style="flex:1; padding:6px;" />
-            <button type="button" id="clear-photo-btn" class="btn btn-sm btn-danger" 
-                    style="display:{% if log and log.photo_base64 %}block{% else %}none{% endif %}; min-height:36px; font-size:13px;" 
-                    onclick="clearPhoto()">
-              Clear
-            </button>
+            <div id="photo-preview-container" style="display:{% if log and log.photo_base64 %}block{% else %}none{% endif %};margin-top:10px;">
+              <img id="photo-preview" alt="Attached photo preview"
+                   src="{{ log.photo_base64 if log and log.photo_base64 else '' }}"
+                   style="max-height:160px;max-width:100%;border-radius:8px;border:2px solid #cbd5e1;object-fit:contain;background:#fff;" />
+            </div>
+            <div class="hint">Automatically shrunk to under 200 KB before sending.</div>
           </div>
-
-          <!-- Compressed Image Preview Container -->
-          <div id="photo-preview-container" style="display:{% if log and log.photo_base64 %}block{% else %}none{% endif %}; margin-top:8px; position:relative;">
-            <img id="photo-preview" src="{{ log.photo_base64 if log and log.photo_base64 else '' }}" 
-                 style="max-height:160px; max-width:100%; border-radius:8px; border:2px solid #cbd5e1; object-fit:contain; background:#ffffff;" />
-          </div>
-        </div>
-
-        <!-- Remarks -->
-        <div class="form-group">
-          <label class="form-label" for="remarks">Remarks / Notes <span style="font-weight:400;color:#94a3b8;">(optional)</span></label>
-          <textarea id="remarks" name="remarks" class="form-control"
-                    rows="4"
-                    placeholder="Any additional notes, classroom incidents, or topics pending…">{{ log.remarks if log else '' }}</textarea>
-        </div>
+        </details>
 
         <div style="display:flex;gap:12px;flex-wrap:wrap;">
-          <button type="submit" id="submit-btn" class="btn btn-primary btn-lg" style="flex:1;">
+          <button type="submit" id="submit-btn" class="btn btn-primary btn-lg" style="flex:1;min-height:52px;font-size:16px;">
             {{ '📝 Update Log' if log else '✅ Submit Daily Log' }}
           </button>
           <a href="{{ url_for('teacher.dashboard') }}" class="btn btn-outline btn-lg">Cancel</a>
@@ -137,9 +216,8 @@
     </div>
   </div>
 
-  <!-- Offline hint -->
   <div style="margin-top:16px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:12px 16px;font-size:13px;color:#15803d;">
-    <strong>📶 Offline-safe:</strong> Your data is auto-saved locally every 3 seconds. Even if your connection drops, your log will sync when you're back online.
+    <strong>📶 Offline-safe:</strong> Your entries save on this device every few seconds. If the network drops, they sync automatically once you are back online.
   </div>
 
 </div>
@@ -147,63 +225,93 @@
 
 {% block extra_scripts %}
 <script>
-document.getElementById('submit-btn').addEventListener('click', function() {
+const form = document.getElementById('daily-log-form');
+const topicInput = document.getElementById('syllabus-topic');
+const remarksInput = document.getElementById('remarks');
+
+/** Let autosave.js know something changed. */
+function touched(el) {
+  el.dispatchEvent(new Event('change', { bubbles: true }));
+  form.dispatchEvent(new Event('change'));
+}
+
+function setTopic(value) {
+  topicInput.value = value;
+  touched(topicInput);
+  topicInput.focus({ preventScroll: true });
+}
+
+/** "Continued" marks the same topic as carrying over to a second day. */
+function continueTopic(value) {
+  const suffix = ' (continued)';
+  setTopic(value.endsWith(suffix) ? value : value + suffix);
+}
+
+/** Quick notes toggle in and out of the remarks box, so nothing is typed. */
+function toggleNote(btn) {
+  const note = btn.dataset.note;
+  const parts = remarksInput.value.split('. ').map(s => s.trim()).filter(Boolean);
+  const at = parts.findIndex(p => p.toLowerCase() === note.toLowerCase());
+
+  if (at >= 0) {
+    parts.splice(at, 1);
+    btn.classList.remove('is-on');
+  } else {
+    parts.push(note);
+    btn.classList.add('is-on');
+  }
+  remarksInput.value = parts.join('. ');
+  touched(remarksInput);
+}
+
+/** Reflect notes already present (saved log, or a restored draft) as active chips. */
+function syncNoteChips() {
+  const current = remarksInput.value.toLowerCase();
+  document.querySelectorAll('[data-note]').forEach(btn => {
+    btn.classList.toggle('is-on', current.includes(btn.dataset.note.toLowerCase()));
+  });
+}
+syncNoteChips();
+remarksInput.addEventListener('input', syncNoteChips);
+
+// Highlight yes/no cards as they are switched.
+document.querySelectorAll('[data-toggle-card]').forEach(card => {
+  const box = card.querySelector('input[type="checkbox"]');
+  box.addEventListener('change', () => card.classList.toggle('is-on', box.checked));
+});
+
+document.getElementById('submit-btn').addEventListener('click', function () {
   this.textContent = 'Submitting…';
   this.style.opacity = '0.7';
 });
 
-// Click-First status pill input populator
-function selectStatusPill(val) {
-  const topicInput = document.getElementById('syllabus-topic');
-  if (topicInput) {
-    const current = topicInput.value.trim();
-    if (current.includes(`[${val}]`)) return;
-    topicInput.value = `[${val}] ` + current;
-    // Trigger change event to save draft in localStorage
-    topicInput.dispatchEvent(new Event('change'));
-  }
-}
-
-// Client-side photo resizing & compression (JPEG 0.7 quality, max 1024px)
-document.getElementById('photo-file').addEventListener('change', function(e) {
+// Resize and compress in the browser so slow connections still upload quickly.
+document.getElementById('photo-file').addEventListener('change', function (e) {
   const file = e.target.files[0];
   if (!file) return;
 
   const reader = new FileReader();
-  reader.onload = function(event) {
+  reader.onload = function (event) {
     const img = new Image();
-    img.onload = function() {
-      const canvas = document.createElement('canvas');
-      let width = img.width;
-      let height = img.height;
+    img.onload = function () {
       const MAX_DIM = 1024;
-
+      let { width, height } = img;
       if (width > MAX_DIM || height > MAX_DIM) {
-        if (width > height) {
-          height = Math.round((height * MAX_DIM) / width);
-          width = MAX_DIM;
-        } else {
-          width = Math.round((width * MAX_DIM) / height);
-          height = MAX_DIM;
-        }
+        if (width > height) { height = Math.round(height * MAX_DIM / width); width = MAX_DIM; }
+        else { width = Math.round(width * MAX_DIM / height); height = MAX_DIM; }
       }
 
+      const canvas = document.createElement('canvas');
       canvas.width = width;
       canvas.height = height;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0, width, height);
+      canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+      const compressed = canvas.toDataURL('image/jpeg', 0.7);
 
-      // Compress to JPEG at 70% quality (under 200KB)
-      const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
-
-      document.getElementById('photo-base64').value = compressedBase64;
-      document.getElementById('photo-preview').src = compressedBase64;
+      document.getElementById('photo-base64').value = compressed;
+      document.getElementById('photo-preview').src = compressed;
       document.getElementById('photo-preview-container').style.display = 'block';
-      document.getElementById('clear-photo-btn').style.display = 'block';
-
-      // Fire change event to ensure autosave includes image
-      document.getElementById('photo-base64').dispatchEvent(new Event('change'));
-      console.log(`[Photo Compression] Original: ${(file.size/1024).toFixed(1)}KB, Base64: ${(compressedBase64.length/1024).toFixed(1)}KB`);
+      document.getElementById('clear-photo-btn').style.display = 'inline-flex';
+      touched(document.getElementById('photo-base64'));
     };
     img.src = event.target.result;
   };
@@ -216,7 +324,7 @@ function clearPhoto() {
   document.getElementById('photo-preview').src = '';
   document.getElementById('photo-preview-container').style.display = 'none';
   document.getElementById('clear-photo-btn').style.display = 'none';
-  document.getElementById('photo-base64').dispatchEvent(new Event('change'));
+  touched(document.getElementById('photo-base64'));
 }
 </script>
 {% endblock %}

@@ -1,30 +1,39 @@
 """
 Chandrabhan Singh Public School — Management Ecosystem
 Entry point for local and cloud (Render/Gunicorn) deployment.
-Crash-proof: create_app() is wrapped so Gunicorn always binds to 0.0.0.0:$PORT.
+
+Startup failures are NOT swallowed here. A previous version caught every
+exception and served a stub app, which hid fatal misconfiguration behind a
+generic "service starting" page — including the database errors that caused
+records to be written to ephemeral storage. A failed deploy that reports why is
+far better than a running portal that loses school data.
 """
 import os
+import sys
 import logging
 
+logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')
 logger = logging.getLogger(__name__)
 
+from app import create_app  # noqa: E402
+from app.config import is_managed_host  # noqa: E402
+
+# Pick the right settings automatically. Running on a hosting service means
+# production; a laptop means development. FLASK_ENV still overrides, but nobody
+# has to set it for the app to behave correctly once deployed.
+config_name = os.environ.get('FLASK_ENV', '').strip() or (
+    'production' if is_managed_host() else 'development'
+)
+
 try:
-    from app import create_app
-    app = create_app(os.environ.get('FLASK_ENV', 'development'))
-except Exception as e:
-    # Emergency fallback — Gunicorn MUST bind to $PORT even if config is broken
-    logger.critical(f"CRITICAL: create_app() failed: {e}. Starting emergency app.")
-    from flask import Flask, jsonify
-    app = Flask(__name__)
-    app.config['SECRET_KEY'] = 'emergency-fallback'
-
-    @app.route('/health')
-    def health():
-        return jsonify({'status': 'ok', 'mode': 'emergency'}), 200
-
-    @app.route('/')
-    def index():
-        return 'Service starting — please retry in 30 seconds.', 503
+    app = create_app(config_name)
+    logger.info(f'Started with the "{config_name}" configuration.')
+except Exception as exc:
+    logger.critical('=' * 74)
+    logger.critical('STARTUP FAILED — the application will not serve requests.')
+    logger.critical(f'{type(exc).__name__}: {exc}')
+    logger.critical('=' * 74)
+    sys.exit(1)
 
 if __name__ == '__main__':
     app.run(

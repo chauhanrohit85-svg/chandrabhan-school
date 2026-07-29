@@ -164,6 +164,7 @@
               <div style="font-size:13px;color:#1e293b;line-height:1.4;">{{ alert.message }}</div>
               <div style="font-size:11px;color:#94a3b8;margin-top:4px;">{{ alert.created_at.strftime('%d %b, %H:%M') }}</div>
               <form action="{{ url_for('admin.resolve_alert', alert_id=alert.id) }}" method="POST" style="margin-top:6px;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
                 <button type="submit" class="btn btn-sm" style="padding:4px 10px;font-size:11px;background:#f1f5f9;color:#475569;min-height:28px;border:none;cursor:pointer;border-radius:6px;">
                   Resolve ✓
                 </button>

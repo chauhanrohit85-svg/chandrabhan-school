@@ -68,15 +68,14 @@ def test_dummy_seeding_is_disabled():
         assert User.query.filter_by(username='teacher1').first() is not None
 
 
+
 def test_strict_postgresql_uri_enforcement(monkeypatch):
-    """
-    Verify that setting an invalid DATABASE_URL scheme raises ValueError rather than falling back silently to SQLite.
-    """
-    from app.config import Config
+    """A non-PostgreSQL DATABASE_URL is rejected rather than silently ignored."""
+    from app.config import resolve_database_uri, DatabaseConfigError
     monkeypatch.setenv('DATABASE_URL', 'invalid_scheme://host/db')
-    with pytest.raises(ValueError) as exc_info:
-        Config._db_uri()
-    assert 'Invalid DATABASE_URL scheme' in str(exc_info.value)
+    with pytest.raises(DatabaseConfigError) as exc_info:
+        resolve_database_uri('production')
+    assert 'must be a PostgreSQL URL' in str(exc_info.value)
 
 
 def test_post_route_commits_permanently(teacher_client, app):
@@ -122,41 +121,50 @@ def test_multi_reboot_persistence(app):
         assert rechecked_s2.full_name == 'Reboot Student'
 
 
-def test_postgresql_engine_sslmode_options(monkeypatch):
-    """
-    Verify that _get_engine_options includes sslmode=require and strips trailing slashes for PostgreSQL connections.
-    """
-    from app.config import Config, _get_engine_options
+
+def test_postgresql_engine_sslmode_options(monkeypatch, fake_pg_driver):
+    """PostgreSQL engine options carry sslmode=require and pooling; trailing slashes are stripped."""
+    from app.config import resolve_database_uri
     monkeypatch.setenv('DATABASE_URL', 'postgresql://user:pass@ep-test.neon.tech/neondb/')
-    uri = Config._db_uri()
+    uri, options = resolve_database_uri('production')
     assert uri == 'postgresql://user:pass@ep-test.neon.tech/neondb'
-    options = _get_engine_options()
     assert options['connect_args']['sslmode'] == 'require'
     assert options['pool_pre_ping'] is True
 
 
-def test_sslmode_stripped_from_database_url(monkeypatch):
+
+def test_sslmode_stripped_from_database_url(monkeypatch, fake_pg_driver):
     """
-    Verify that ?sslmode=require in DATABASE_URL is stripped to avoid duplicate parameter errors
-    with connect_args={'sslmode': 'require'}.
+    ?sslmode=require is stripped from the URL because it is supplied via
+    connect_args; having it in both places is a duplicate-parameter error.
     """
-    from app.config import Config
+    from app.config import resolve_database_uri
     monkeypatch.setenv('DATABASE_URL', 'postgresql://user:pass@ep-test.neon.tech/neondb?sslmode=require')
-    uri = Config._db_uri()
+    uri, _ = resolve_database_uri('production')
     assert 'sslmode' not in uri
     assert uri == 'postgresql://user:pass@ep-test.neon.tech/neondb'
 
 
-def test_deferred_app_initialization_instant_import():
+
+def test_app_factory_binds_engine_before_use(monkeypatch, tmp_path):
     """
-    Verify that create_app() instantiates instantly without making synchronous database calls.
+    The engine must be built from the resolved URI during create_app().
+
+    Flask-SQLAlchemy creates engines inside init_app(), so the live engine and
+    the configured URI must agree once the factory returns. They previously did
+    not, because a before_request hook rewrote the config after the engine had
+    already been built.
     """
-    import time
-    start_time = time.time()
+    monkeypatch.delenv('DATABASE_URL', raising=False)
+    monkeypatch.delenv('RENDER', raising=False)
+    monkeypatch.delenv('RENDER_SERVICE_ID', raising=False)
+    monkeypatch.setenv('SQLITE_DB_PATH', str(tmp_path / 'bind_check.db'))
+
     application = create_app('development')
-    elapsed = time.time() - start_time
-    assert elapsed < 1.0  # Must instantiate in under 1 second
-    assert application is not None
+    with application.app_context():
+        from app.extensions import db as bound_db
+        assert str(bound_db.engine.url) == application.config['SQLALCHEMY_DATABASE_URI']
+        assert bound_db.engine.name == 'sqlite'
 
 
 def test_render_health_check_endpoint(client):
@@ -223,46 +231,41 @@ def test_login_page_renders_with_seeded_accounts():
         assert director.role == 'director'
 
 
-def test_sqlalchemy_database_uri_explicit_mapping_and_db_create_all(monkeypatch):
-    """
-    Verify that SQLALCHEMY_DATABASE_URI is explicitly mapped from DATABASE_URL,
-    converts postgres:// to postgresql://, is never None/empty, and db.create_all() executes
-    without UnboundExecutionError.
-    """
-    from app.extensions import db as test_db
-    monkeypatch.setenv('DATABASE_URL', 'postgres://user:pass@localhost:5432/neondb?sslmode=require')
-    
-    # Verify Config._db_uri() converts scheme and strips sslmode query param
-    from app.config import Config
-    uri = Config._db_uri()
-    assert uri == 'postgresql://user:pass@localhost:5432/neondb'
-    assert uri is not None
-    assert len(uri) > 0
 
-    # Verify create_app handles DATABASE_URL mapping and non-empty URI
-    app_instance = create_app('development')
-    assert app_instance.config['SQLALCHEMY_DATABASE_URI'] is not None
-def test_production_mode_enforces_postgresql_uri(monkeypatch):
-    """
-    Verify that when DATABASE_URL is set in os.environ, Config._db_uri() strictly enforces
-    PostgreSQL URI, converts postgres:// to postgresql://, and disables local SQLite fallback.
-    """
-    monkeypatch.setenv('DATABASE_URL', 'postgres://neon_user:neon_pass@ep-cloud-db.neon.tech/school_production?sslmode=require')
-    
-    from app.config import Config
-    uri = Config._db_uri()
+def test_postgres_scheme_is_normalised(monkeypatch, fake_pg_driver):
+    """Legacy postgres:// URLs are rewritten to postgresql:// for SQLAlchemy."""
+    from app.config import resolve_database_uri
+    monkeypatch.setenv('DATABASE_URL', 'postgres://user:pass@localhost:5432/neondb?sslmode=require')
+    uri, _ = resolve_database_uri('production')
+    assert uri == 'postgresql://user:pass@localhost:5432/neondb'
+
+
+
+def test_production_mode_enforces_postgresql_uri(monkeypatch, fake_pg_driver):
+    """When DATABASE_URL is set there is no SQLite anywhere in the resolved URI."""
+    monkeypatch.setenv(
+        'DATABASE_URL',
+        'postgres://neon_user:neon_pass@ep-cloud-db.neon.tech/school_production?sslmode=require')
+    from app.config import resolve_database_uri
+    uri, _ = resolve_database_uri('production')
     assert uri.startswith('postgresql://')
     assert 'neon_user' in uri
     assert 'sqlite' not in uri
+
+
 def test_render_environment_without_database_url_raises_runtime_error(monkeypatch):
     """
     Verify that if RENDER environment variable is set but DATABASE_URL is missing,
     create_app raises RuntimeError refusing to start in SQLite mode.
     """
+    from app.config import DatabaseConfigError
+
     monkeypatch.setenv('RENDER', 'true')
     monkeypatch.delenv('DATABASE_URL', raising=False)
-    with pytest.raises(RuntimeError) as exc_info:
+
+    with pytest.raises(DatabaseConfigError) as exc_info:
         create_app('production')
+    assert 'DATABASE_URL' in str(exc_info.value)
 def test_session_closing_and_reopening_verifies_student_persistence(app):
     """
     Verify that inserting a student, committing the transaction, removing the session,
@@ -305,3 +308,36 @@ def test_session_closing_and_reopening_verifies_student_persistence(app):
 
 
 
+
+
+def test_missing_driver_never_falls_back_to_sqlite(monkeypatch):
+    """
+    Regression: DATABASE_URL set + unimportable driver must raise, not degrade.
+
+    This is the exact production failure. create_app() used to catch ImportError
+    on psycopg2 and quietly rebind to a local SQLite file, so the portal kept
+    accepting student records that were wiped on the next restart.
+    """
+    import importlib
+    config_module = importlib.import_module('app.config')
+    from app.config import resolve_database_uri, DatabaseConfigError
+
+    monkeypatch.setenv('DATABASE_URL', 'postgresql://user:pass@ep-test.neon.tech/neondb')
+    monkeypatch.setattr(config_module, 'postgres_driver_available',
+                        lambda: (False, 'simulated missing driver'))
+
+    with pytest.raises(DatabaseConfigError) as exc_info:
+        resolve_database_uri('production')
+
+    message = str(exc_info.value)
+    assert 'sqlite' not in message.lower()
+    assert 'driver' in message.lower()
+
+
+def test_managed_host_without_database_url_is_fatal(monkeypatch):
+    """Ephemeral SQLite on a managed host is refused outright."""
+    from app.config import resolve_database_uri, DatabaseConfigError
+    monkeypatch.setenv('RENDER', 'true')
+    monkeypatch.delenv('DATABASE_URL', raising=False)
+    with pytest.raises(DatabaseConfigError):
+        resolve_database_uri('production')
