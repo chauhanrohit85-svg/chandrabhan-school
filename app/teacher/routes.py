@@ -49,6 +49,17 @@ def get_active_context():
     return cls, subject, []
 
 
+def _pillars_for_subject(subject):
+    """Only show the pillars a subject teacher can actually judge."""
+    if subject == 'English':
+        return ['english_speaking', 'reading', 'writing']
+    if subject == 'Mathematics':
+        return ['mathematics']
+    if subject == 'Reasoning':
+        return ['reasoning']
+    return PillarScore.PILLARS
+
+
 def get_syllabus_pace(class_id, subject):
     """
     Calculate progress of syllabus relative to time elapsed in the term.
@@ -224,11 +235,36 @@ def daily_log():
             db.session.rollback()
             flash(f'Error saving daily log: {str(e)}', 'danger')
 
+    # Everything below exists to remove typing. The topic a teacher enters is
+    # almost always the next step of a topic they already entered, so previous
+    # entries are offered as one-tap chips and as autocomplete suggestions.
+    previous_logs = TeacherDailyLog.query.filter(
+        TeacherDailyLog.teacher_id == current_user.id,
+        TeacherDailyLog.class_id == cls.id,
+        TeacherDailyLog.subject == subject,
+        TeacherDailyLog.log_date < today,
+        TeacherDailyLog.syllabus_topic.isnot(None),
+        TeacherDailyLog.syllabus_topic != '',
+    ).order_by(TeacherDailyLog.log_date.desc()).limit(40).all()
+
+    last_log = previous_logs[0] if previous_logs else None
+
+    recent_topics = []
+    for prev in previous_logs:
+        topic = (prev.syllabus_topic or '').strip()
+        if topic and topic not in recent_topics:
+            recent_topics.append(topic)
+        if len(recent_topics) >= 8:
+            break
+
     return render_template('teacher/daily_log.html',
         cls=cls,
         subject=subject,
         today=today,
         log=log,
+        last_log=last_log,
+        recent_topics=recent_topics,
+        quick_notes=TeacherDailyLog.QUICK_NOTES,
         syllabus_statuses=TeacherDailyLog.SYLLABUS_STATUS_LABELS,
     )
 
@@ -426,9 +462,9 @@ def pillars():
         flash('You are not assigned to any class.', 'warning')
         return redirect(url_for('teacher.dashboard'))
 
-    now = datetime.now()
-    current_week = now.isocalendar()[1]
-    current_year = now.year
+    today = date.today()
+    current_week = today.isocalendar()[1]
+    current_year = today.year
 
     students = Student.query.filter_by(class_id=cls.id, is_active=1)\
                             .order_by(Student.roll_number).all()
@@ -439,24 +475,32 @@ def pillars():
     ).join(Student).filter(Student.class_id == cls.id).all():
         existing_scores[(score.student_id, score.pillar)] = score
 
-    # Filter pillars relevant to active subject context
-    active_pillars = PillarScore.PILLARS
-    if subject == 'English':
-        active_pillars = ['english_speaking', 'reading', 'writing']
-    elif subject == 'Mathematics':
-        active_pillars = ['mathematics']
-    elif subject == 'Reasoning':
-        active_pillars = ['reasoning']
+    # Last week's ratings power the "Copy last week" shortcut. Most students do
+    # not swing week to week, so copying and adjusting a handful is far less work
+    # than scoring every student from scratch. Derived from a real date so it
+    # stays correct across a year boundary.
+    prev = today - timedelta(weeks=1)
+    prev_week, prev_year = prev.isocalendar()[1], prev.isocalendar()[0]
+    last_week_scores = {}
+    for score in PillarScore.query.filter_by(
+            subject=subject, week_number=prev_week, year=prev_year
+    ).join(Student).filter(Student.class_id == cls.id).all():
+        last_week_scores[f'{score.student_id}_{score.pillar}'] = score.qualitative
 
     return render_template('teacher/pillar_entry.html',
         cls=cls,
         subject=subject,
         students=students,
-        pillars=active_pillars,
+        pillars=_pillars_for_subject(subject),
         pillar_labels=PillarScore.PILLAR_LABELS,
         pillar_icons=PillarScore.PILLAR_ICONS,
         qualitative_labels=PillarScore.QUALITATIVE_LABELS,
+        qualitative_colors=PillarScore.QUALITATIVE_COLORS,
+        qualitative_percent=PillarScore.QUALITATIVE_PERCENT,
+        milestone_tags=PillarScore.MILESTONE_TAGS,
         existing_scores=existing_scores,
+        last_week_scores=last_week_scores,
+        prev_week=prev_week,
         current_week=current_week,
         current_year=current_year,
     )
@@ -477,13 +521,7 @@ def pillar_entry():
     students = Student.query.filter_by(class_id=cls.id, is_active=1).all()
     saved = 0
 
-    active_pillars = PillarScore.PILLARS
-    if subject == 'English':
-        active_pillars = ['english_speaking', 'reading', 'writing']
-    elif subject == 'Mathematics':
-        active_pillars = ['mathematics']
-    elif subject == 'Reasoning':
-        active_pillars = ['reasoning']
+    active_pillars = _pillars_for_subject(subject)
 
     for student in students:
         for pillar in active_pillars:
@@ -497,7 +535,19 @@ def pillar_entry():
                 continue
 
             qual = int(qual_val)
-            quant = float(request.form.get(quant_key, 0) or 0)
+
+            # The star rating already implies a percentage band, so the % box is
+            # optional. Left blank, it is derived — that removes one number to
+            # type for every student in every pillar.
+            raw_quant = (request.form.get(quant_key) or '').strip()
+            if raw_quant:
+                try:
+                    quant = float(raw_quant)
+                except ValueError:
+                    quant = PillarScore.QUALITATIVE_PERCENT.get(qual, 0.0)
+            else:
+                quant = PillarScore.QUALITATIVE_PERCENT.get(qual, 0.0)
+
             remarks = request.form.get(remarks_key, '').strip() or None
             photo_base64 = request.form.get(photo_key, '').strip() or None
 

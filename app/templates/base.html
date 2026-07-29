@@ -217,11 +217,25 @@
       </div>
 
       <div style="display:flex;align-items:center;gap:12px;">
-        <!-- Engine Status Badge — driven by the LIVE engine, not the config string -->
+        <!-- Storage badge — driven by the LIVE engine, not the config string.
+             SQLite is only a problem on a host with disposable storage; on a
+             school's own PC it is the normal, correct setup, so it reads as
+             neutral there rather than as an alarm. -->
         {% if db_is_permanent %}
-        <span class="badge" style="background:#10b981; color:white; font-size:12px; padding:4px 8px; border-radius:4px;">🟢 Active Engine: PostgreSQL (Neon Cloud Vault)</span>
+        <span class="badge" style="background:#10b981; color:white; font-size:12px; padding:4px 8px; border-radius:4px;"
+              title="Records are saved to the cloud database and survive restarts.">
+          🟢 Cloud database
+        </span>
+        {% elif is_render_env %}
+        <span class="badge" style="background:#dc2626; color:white; font-size:12px; padding:4px 8px; border-radius:4px;"
+              title="This server erases local files on restart. Records entered now will be lost.">
+          🔴 Not saving permanently
+        </span>
         {% else %}
-        <span class="badge" style="background:#dc2626; color:white; font-size:12px; padding:4px 8px; border-radius:4px;">🔴 Active Engine: {{ db_engine_name }} — not permanent</span>
+        <span class="badge" style="background:#e2e8f0; color:#475569; font-size:12px; padding:4px 8px; border-radius:4px;"
+              title="Records are saved to a database file on this computer.">
+          💾 Local database
+        </span>
         {% endif %}
         <span id="online-status" class="online-badge badge badge-success" style="font-size:12px;">● Online</span>
 

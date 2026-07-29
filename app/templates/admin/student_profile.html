@@ -4,6 +4,33 @@
 
 {% block extra_head %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<style>
+  .grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:24px; margin-bottom:24px; }
+  @media (max-width:900px) { .grid-2 { grid-template-columns:1fr; } }
+
+  /* Plain-language score strip: a labelled bar reads faster than a radar for
+     anyone who is not used to charts. */
+  .pill-row {
+    display:flex; align-items:center; gap:14px;
+    padding:14px 0; border-bottom:1px solid #f1f5f9;
+  }
+  .pill-row:last-child { border-bottom:none; }
+  .pill-title { flex:0 0 168px; display:flex; align-items:center; gap:8px; font-weight:600; color:#334155; font-size:14px; }
+  .pill-track { flex:1; height:14px; background:#f1f5f9; border-radius:999px; overflow:hidden; min-width:80px; }
+  .pill-fill { height:100%; border-radius:999px; transition:width .5s ease; }
+  .pill-score { flex:0 0 118px; text-align:right; font-size:13px; font-weight:700; }
+  .trend { font-size:12px; font-weight:700; padding:2px 7px; border-radius:999px; white-space:nowrap; }
+  .trend.up   { background:#dcfce7; color:#15803d; }
+  .trend.down { background:#fee2e2; color:#b91c1c; }
+  .trend.flat { background:#f1f5f9; color:#64748b; }
+  .trend.none { background:#f8fafc; color:#cbd5e1; }
+
+  @media (max-width:640px) {
+    .pill-title { flex-basis:100%; }
+    .pill-row { flex-wrap:wrap; }
+    .pill-score { flex:1; text-align:left; }
+  }
+</style>
 {% endblock %}
 
 {% block content %}
@@ -43,40 +70,142 @@
   </div>
   {% endif %}
 
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:24px;">
+  <!-- ── How is this student doing? ──────────────────────────────────── -->
+  <div class="card" style="margin-bottom:24px;">
+    <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+      <h2>📊 How is {{ student.full_name.split(' ')[0] }} doing?</h2>
+      <span style="font-size:13px;color:#64748b;">Latest recorded score in each pillar</span>
+    </div>
+    <div class="card-body">
 
-    <!-- Radar Chart -->
+      <!-- Headline -->
+      <div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap;padding-bottom:18px;border-bottom:2px solid #f1f5f9;margin-bottom:8px;">
+        <div style="display:flex;align-items:center;justify-content:center;width:96px;height:96px;border-radius:50%;
+                    background:{{ overall.color }}1a;border:5px solid {{ overall.color }};flex-shrink:0;">
+          <div style="text-align:center;">
+            <div style="font-size:30px;font-weight:800;color:{{ overall.color }};line-height:1;">
+              {{ overall.average if overall.average is not none else '—' }}
+            </div>
+            <div style="font-size:11px;color:#64748b;font-weight:700;">out of 5</div>
+          </div>
+        </div>
+        <div style="flex:1;min-width:200px;">
+          <div style="font-size:20px;font-weight:800;color:{{ overall.color }};">{{ overall.label }}</div>
+          <div style="font-size:14px;color:#64748b;margin-top:4px;">
+            Average across {{ overall.pillars_scored }} of {{ overall.pillars_total }} pillars.
+            {% if overall.pillars_scored < overall.pillars_total %}
+              The rest have not been scored yet.
+            {% endif %}
+          </div>
+          {% if attendance_percent is not none %}
+          <div style="font-size:14px;color:#64748b;margin-top:6px;">
+            Attendance over the last 30 days:
+            <strong style="color:{% if attendance_percent >= 90 %}#059669{% elif attendance_percent >= 75 %}#d97706{% else %}#dc2626{% endif %};">
+              {{ attendance_percent }}%
+            </strong>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- Per-pillar bars -->
+      {% for pillar, info in pillar_summary.items() %}
+      <div class="pill-row">
+        <div class="pill-title"><span style="font-size:16px;">{{ info.icon }}</span>{{ info.label }}</div>
+        <div class="pill-track">
+          <div class="pill-fill" style="width:{{ info.percent }}%;background:{{ info.color }};"></div>
+        </div>
+        <div class="pill-score">
+          {% if info.latest %}
+            <span style="color:{{ info.color }};">{{ info.latest }}/5 · {{ info.latest_label }}</span>
+          {% else %}
+            <span style="color:#cbd5e1;font-weight:600;">Not scored</span>
+          {% endif %}
+        </div>
+        <span class="trend {{ info.direction }}" title="Compared with the previous scored week">
+          {% if info.direction == 'up' %}▲ up {{ info.delta }}
+          {% elif info.direction == 'down' %}▼ down {{ info.delta }}
+          {% elif info.direction == 'flat' %}● same
+          {% else %}—{% endif %}
+        </span>
+      </div>
+      {% endfor %}
+
+      <div style="margin-top:16px;padding:12px 14px;background:#f8fafc;border-radius:10px;font-size:13px;color:#475569;">
+        <strong>Reading this:</strong> a longer, greener bar is better.
+        <span class="trend up" style="margin:0 2px;">▲ up</span> means the score improved since the
+        previous week it was recorded, <span class="trend down" style="margin:0 2px;">▼ down</span> means it slipped.
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Trend over time ─────────────────────────────────────────────── -->
+  <div class="card" style="margin-bottom:24px;">
+    <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+      <h2>📈 Progress over the last {{ weeks|length }} weeks</h2>
+      <span style="font-size:13px;color:#64748b;">Higher is better · 1 = Needs Work, 5 = Excellent</span>
+    </div>
+    <div class="card-body">
+      <div style="position:relative;height:340px;">
+        <canvas id="trend-chart"
+                data-weeks='{{ weeks | tojson }}'
+                data-series='{{ pillar_series | tojson }}'
+                data-labels='{{ pillar_labels | tojson }}'
+                data-colors='{{ pillar_colors | tojson }}'
+                data-meanings='{{ qualitative_labels | tojson }}'></canvas>
+      </div>
+      <div style="margin-top:12px;font-size:13px;color:#64748b;">
+        A gap in a line means no score was recorded that week.
+      </div>
+    </div>
+  </div>
+
+  <div class="grid-2">
+
+    <!-- Radar -->
     <div class="card">
-      <div class="card-header"><h2>⭐ Current Week Pillar Scores</h2></div>
-      <div class="card-body" style="text-align:center;">
-        <canvas id="student-radar"
-                data-labels='{{ pillar_labels.values() | list | tojson }}'
-                data-values='{% set vals = [] %}{% for p in radar_data.values() %}{% set _ = vals.append(p) %}{% endfor %}{{ vals | tojson }}'
-                data-name="{{ student.full_name }}"
-                height="200"></canvas>
+      <div class="card-header"><h2>⭐ Balance across pillars</h2></div>
+      <div class="card-body">
+        <div style="position:relative;height:300px;">
+          <canvas id="student-radar"
+                  data-labels='{{ pillar_labels.values() | list | tojson }}'
+                  data-values='{% set vals = [] %}{% for p in radar_data.values() %}{% set _ = vals.append(p) %}{% endfor %}{{ vals | tojson }}'
+                  data-name="{{ student.full_name }}"></canvas>
+        </div>
+        <div style="margin-top:8px;font-size:13px;color:#64748b;text-align:center;">
+          A wide, even shape means balanced progress. A dent shows the pillar needing attention.
+        </div>
       </div>
     </div>
 
-    <!-- Attendance Summary -->
+    <!-- Attendance -->
     <div class="card">
-      <div class="card-header"><h2>✅ Attendance (Last 30 Days)</h2></div>
+      <div class="card-header"><h2>✅ Attendance (last 30 days)</h2></div>
       <div class="card-body">
-        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:20px;">
-          <div style="text-align:center;background:#d1fae5;border-radius:12px;padding:16px;">
-            <div style="font-size:28px;font-weight:800;color:#065f46;">{{ present_count }}</div>
-            <div style="font-size:12px;color:#047857;font-weight:600;margin-top:4px;">Present</div>
+        {% if present_count or absent_count or late_count %}
+        <div style="position:relative;height:190px;margin-bottom:16px;">
+          <canvas id="attendance-chart"
+                  data-values='{{ [present_count, late_count, absent_count] | tojson }}'
+                  data-percent="{{ attendance_percent if attendance_percent is not none else 0 }}"></canvas>
+        </div>
+        {% endif %}
+
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px;">
+          <div style="text-align:center;background:#d1fae5;border-radius:12px;padding:14px;">
+            <div style="font-size:26px;font-weight:800;color:#065f46;">{{ present_count }}</div>
+            <div style="font-size:12px;color:#047857;font-weight:600;margin-top:2px;">Present</div>
           </div>
-          <div style="text-align:center;background:#fee2e2;border-radius:12px;padding:16px;">
-            <div style="font-size:28px;font-weight:800;color:#991b1b;">{{ absent_count }}</div>
-            <div style="font-size:12px;color:#dc2626;font-weight:600;margin-top:4px;">Absent</div>
+          <div style="text-align:center;background:#fef3c7;border-radius:12px;padding:14px;">
+            <div style="font-size:26px;font-weight:800;color:#92400e;">{{ late_count }}</div>
+            <div style="font-size:12px;color:#b45309;font-weight:600;margin-top:2px;">Late</div>
           </div>
-          <div style="text-align:center;background:#fef3c7;border-radius:12px;padding:16px;">
-            <div style="font-size:28px;font-weight:800;color:#92400e;">{{ late_count }}</div>
-            <div style="font-size:12px;color:#b45309;font-weight:600;margin-top:4px;">Late</div>
+          <div style="text-align:center;background:#fee2e2;border-radius:12px;padding:14px;">
+            <div style="font-size:26px;font-weight:800;color:#991b1b;">{{ absent_count }}</div>
+            <div style="font-size:12px;color:#dc2626;font-weight:600;margin-top:2px;">Absent</div>
           </div>
         </div>
-        <!-- Attendance log -->
-        <div style="max-height:200px;overflow-y:auto;">
+
+        <div style="max-height:170px;overflow-y:auto;">
           {% for rec in attendance_records[:14] %}
           <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f1f5f9;font-size:13px;">
             <span style="color:#475569;">{{ rec.log_date.strftime('%d %b %Y') }}</span>
@@ -84,6 +213,8 @@
               {{ rec.status.title() }}
             </span>
           </div>
+          {% else %}
+          <div style="text-align:center;color:#94a3b8;padding:20px;font-size:13px;">No attendance recorded yet.</div>
           {% endfor %}
         </div>
       </div>
@@ -91,10 +222,11 @@
 
   </div>
 
-  <!-- Pillar Score History Table -->
+  <!-- Detailed history -->
   <div class="card">
     <div class="card-header">
-      <h2>📈 Pillar Score History (Last 8 Weeks)</h2>
+      <h2>📋 Week-by-week detail</h2>
+      <span style="font-size:13px;color:#64748b;">Exact scores as entered by teachers</span>
     </div>
     <div class="table-wrapper">
       <table class="data-table">
@@ -115,16 +247,14 @@
               {% set scores_for_week = pillar_history.get(pillar, []) | selectattr('week_number','eq',wk) | list %}
               {% if scores_for_week %}
                 {% set sc = scores_for_week[0] %}
-                <div style="display:flex;align-items:center;gap:6px;">
-                  <div class="pillar-dots">
-                    {% for i in range(1,6) %}
-                    <div class="pillar-dot {% if i <= sc.qualitative %}filled{% endif %}"></div>
-                    {% endfor %}
-                  </div>
-                  <span style="font-size:12px;color:#64748b;">{{ qualitative_labels.get(sc.qualitative,'') }}</span>
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;
+                               border-radius:7px;background:{{ qualitative_colors.get(sc.qualitative) }};
+                               color:#fff;font-weight:800;font-size:12px;">{{ sc.qualitative }}</span>
+                  <span style="font-size:12.5px;color:#475569;">{{ qualitative_labels.get(sc.qualitative,'') }}</span>
                 </div>
-                {% if sc.quantitative_score %}
-                <div style="font-size:11px;color:#94a3b8;margin-top:2px;">{{ sc.quantitative_score }}%</div>
+                {% if sc.remarks %}
+                <div style="font-size:11px;color:#94a3b8;margin-top:3px;">{{ sc.remarks }}</div>
                 {% endif %}
               {% else %}
                 <span style="color:#e2e8f0;font-size:12px;">—</span>
@@ -143,40 +273,166 @@
 
 {% block extra_scripts %}
 <script>
-(function() {
-  const canvas = document.getElementById('student-radar');
-  if (!canvas || typeof Chart === 'undefined') return;
-  const labels = JSON.parse(canvas.dataset.labels);
-  const values = JSON.parse(canvas.dataset.values);
+(function () {
+  if (typeof Chart === 'undefined') return;
 
-  new Chart(canvas, {
-    type: 'radar',
-    data: {
-      labels,
-      datasets: [{
-        label: canvas.dataset.name,
-        data: values,
-        backgroundColor: 'rgba(79,70,229,0.15)',
-        borderColor: 'rgba(79,70,229,0.9)',
-        borderWidth: 2.5,
-        pointBackgroundColor: '#6366f1',
-        pointRadius: 5,
-      }]
-    },
-    options: {
-      responsive: true,
-      plugins: { legend: { labels: { font: { family:'Inter' }, color:'#475569' } } },
-      scales: {
-        r: {
-          beginAtZero: true, max: 5,
-          ticks: { stepSize:1, color:'#94a3b8', backdropColor:'transparent' },
-          grid: { color:'#f1f5f9' },
-          angleLines: { color:'#e2e8f0' },
-          pointLabels: { color:'#475569', font:{ size:12, family:'Inter', weight:'600' } }
-        }
-      }
-    }
-  });
+  Chart.defaults.font.family = 'Inter, system-ui, sans-serif';
+  Chart.defaults.color = '#64748b';
+
+  // ── Trend over time ───────────────────────────────────────────────────
+  const trend = document.getElementById('trend-chart');
+  if (trend) {
+    const weeks    = JSON.parse(trend.dataset.weeks);
+    const series   = JSON.parse(trend.dataset.series);
+    const labels   = JSON.parse(trend.dataset.labels);
+    const colors   = JSON.parse(trend.dataset.colors);
+    const meanings = JSON.parse(trend.dataset.meanings);
+
+    new Chart(trend, {
+      type: 'line',
+      data: {
+        labels: weeks.map(w => 'Week ' + w),
+        datasets: Object.keys(series).map(pillar => ({
+          label: labels[pillar] || pillar,
+          data: series[pillar],
+          borderColor: colors[pillar],
+          backgroundColor: colors[pillar] + '22',
+          borderWidth: 3,
+          pointBackgroundColor: '#fff',
+          pointBorderColor: colors[pillar],
+          pointBorderWidth: 2.5,
+          pointRadius: 5,
+          pointHoverRadius: 7,
+          tension: 0.35,
+          spanGaps: true,      // draw through weeks with no score
+        })),
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: {
+            position: 'bottom',
+            labels: { usePointStyle: true, pointStyle: 'circle', padding: 16, font: { size: 12, weight: '600' } },
+          },
+          tooltip: {
+            backgroundColor: '#0f172a',
+            padding: 12,
+            cornerRadius: 8,
+            titleFont: { size: 13 },
+            bodyFont: { size: 13 },
+            callbacks: {
+              // Show "4 — Good" rather than a bare number.
+              label: ctx => ctx.parsed.y == null
+                ? `${ctx.dataset.label}: not scored`
+                : `${ctx.dataset.label}: ${ctx.parsed.y} — ${meanings[ctx.parsed.y] || ''}`,
+            },
+          },
+        },
+        scales: {
+          y: {
+            min: 0, max: 5,
+            ticks: {
+              stepSize: 1,
+              // Label the axis with meanings, not just digits.
+              callback: v => (v === 0 ? '' : `${v} · ${meanings[v] || ''}`),
+              font: { size: 11, weight: '600' },
+            },
+            grid: { color: '#f1f5f9' },
+            border: { display: false },
+          },
+          x: { grid: { display: false }, ticks: { font: { size: 12, weight: '600' } } },
+        },
+      },
+    });
+  }
+
+  // ── Radar ─────────────────────────────────────────────────────────────
+  const radar = document.getElementById('student-radar');
+  if (radar) {
+    new Chart(radar, {
+      type: 'radar',
+      data: {
+        labels: JSON.parse(radar.dataset.labels),
+        datasets: [{
+          label: radar.dataset.name,
+          data: JSON.parse(radar.dataset.values),
+          backgroundColor: 'rgba(99,102,241,0.18)',
+          borderColor: '#4f46e5',
+          borderWidth: 3,
+          pointBackgroundColor: '#fff',
+          pointBorderColor: '#4f46e5',
+          pointBorderWidth: 2.5,
+          pointRadius: 5,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          r: {
+            beginAtZero: true, max: 5,
+            ticks: { stepSize: 1, color: '#94a3b8', backdropColor: 'transparent', font: { size: 11 } },
+            grid: { color: '#e2e8f0' },
+            angleLines: { color: '#e2e8f0' },
+            pointLabels: { color: '#334155', font: { size: 12, weight: '600' } },
+          },
+        },
+      },
+    });
+  }
+
+  // ── Attendance doughnut ───────────────────────────────────────────────
+  const att = document.getElementById('attendance-chart');
+  if (att) {
+    const values = JSON.parse(att.dataset.values);
+    const percent = att.dataset.percent;
+
+    new Chart(att, {
+      type: 'doughnut',
+      data: {
+        labels: ['Present', 'Late', 'Absent'],
+        datasets: [{
+          data: values,
+          backgroundColor: ['#10b981', '#f59e0b', '#f43f5e'],
+          borderWidth: 3,
+          borderColor: '#fff',
+          hoverOffset: 6,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: '68%',
+        plugins: {
+          legend: { position: 'bottom', labels: { usePointStyle: true, pointStyle: 'circle', padding: 14, font: { size: 12, weight: '600' } } },
+          tooltip: { backgroundColor: '#0f172a', padding: 10, cornerRadius: 8 },
+        },
+      },
+      plugins: [{
+        // Put the headline attendance figure in the middle of the ring.
+        id: 'centreLabel',
+        afterDraw(chart) {
+          const { ctx, chartArea } = chart;
+          if (!chartArea) return;
+          const x = (chartArea.left + chartArea.right) / 2;
+          const y = (chartArea.top + chartArea.bottom) / 2;
+          ctx.save();
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillStyle = '#0f172a';
+          ctx.font = '800 26px Inter, system-ui, sans-serif';
+          ctx.fillText(`${percent}%`, x, y - 8);
+          ctx.fillStyle = '#94a3b8';
+          ctx.font = '600 12px Inter, system-ui, sans-serif';
+          ctx.fillText('present', x, y + 14);
+          ctx.restore();
+        },
+      }],
+    });
+  }
 })();
 </script>
 {% endblock %}

@@ -853,6 +853,8 @@ def student_profile(student_id):
         student_id=student_id, is_resolved=0
     ).order_by(AlertFlag.created_at.desc()).all()
 
+    weeks = list(range(start_wk, cw + 1))
+
     # Current week radar data
     radar_data = {}
     for pillar in PillarScore.PILLARS:
@@ -865,6 +867,60 @@ def student_profile(student_id):
         score = q.first()
         radar_data[pillar] = score.qualitative if score else 0
 
+    # ── Chart-ready summaries ────────────────────────────────────────────
+    # A week-by-week series per pillar (None where nothing was recorded, so the
+    # line chart shows a gap rather than pretending the score dropped to zero),
+    # plus a headline card per pillar with its direction of travel.
+    pillar_series = {}
+    pillar_summary = {}
+
+    for pillar in PillarScore.PILLARS:
+        by_week = {s.week_number: s.qualitative for s in pillar_history.get(pillar, [])}
+        series = [by_week.get(wk) for wk in weeks]
+        pillar_series[pillar] = series
+
+        recorded = [(wk, by_week[wk]) for wk in weeks if by_week.get(wk) is not None]
+        latest = recorded[-1][1] if recorded else None
+        previous = recorded[-2][1] if len(recorded) > 1 else None
+
+        if latest is None:
+            direction, delta = 'none', 0
+        elif previous is None:
+            direction, delta = 'flat', 0
+        else:
+            delta = latest - previous
+            direction = 'up' if delta > 0 else ('down' if delta < 0 else 'flat')
+
+        average = round(sum(v for _, v in recorded) / len(recorded), 1) if recorded else None
+
+        pillar_summary[pillar] = {
+            'label': PillarScore.PILLAR_LABELS.get(pillar, pillar),
+            'icon': PillarScore.PILLAR_ICONS.get(pillar, ''),
+            'latest': latest,
+            'latest_label': PillarScore.QUALITATIVE_LABELS.get(latest, 'Not scored yet'),
+            'color': PillarScore.QUALITATIVE_COLORS.get(latest, '#cbd5e1'),
+            'percent': round((latest / 5) * 100) if latest else 0,
+            'direction': direction,
+            'delta': abs(delta),
+            'average': average,
+            'weeks_recorded': len(recorded),
+        }
+
+    scored = [s['latest'] for s in pillar_summary.values() if s['latest'] is not None]
+    overall = {
+        'average': round(sum(scored) / len(scored), 1) if scored else None,
+        'pillars_scored': len(scored),
+        'pillars_total': len(PillarScore.PILLARS),
+    }
+    if overall['average'] is not None:
+        overall['color'] = PillarScore.QUALITATIVE_COLORS.get(round(overall['average']), '#cbd5e1')
+        overall['label'] = PillarScore.QUALITATIVE_LABELS.get(round(overall['average']), '')
+    else:
+        overall['color'], overall['label'] = '#cbd5e1', 'No scores yet'
+
+    total_attendance = present_count + absent_count + late_count
+    attendance_percent = round(present_count / total_attendance * 100) if total_attendance else None
+
     return render_template('admin/student_profile.html',
         student=student,
         selected_subject=selected_subject,
@@ -872,13 +928,19 @@ def student_profile(student_id):
         pillar_history=pillar_history,
         pillar_labels=PillarScore.PILLAR_LABELS,
         pillar_icons=PillarScore.PILLAR_ICONS,
+        pillar_colors=PillarScore.PILLAR_COLORS,
         qualitative_labels=PillarScore.QUALITATIVE_LABELS,
+        qualitative_colors=PillarScore.QUALITATIVE_COLORS,
         attendance_records=attendance_records,
         present_count=present_count,
         absent_count=absent_count,
         late_count=late_count,
+        attendance_percent=attendance_percent,
         active_alerts=active_alerts,
         alert_labels=AlertFlag.ALERT_TYPE_LABELS,
         radar_data=radar_data,
-        weeks=list(range(start_wk, cw + 1)),
+        pillar_series=pillar_series,
+        pillar_summary=pillar_summary,
+        overall=overall,
+        weeks=weeks,
     )

@@ -43,11 +43,17 @@
           id="attendance-form" data-autosave>
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
 
-      <!-- Attendance Status Legend -->
-      <div style="padding:12px 24px;background:#f8fafc;border-bottom:1px solid #f1f5f9;display:flex;gap:20px;flex-wrap:wrap;">
-        {% for status, label, color in [('present','Present','#10b981'),('late','Late','#f59e0b'),('absent','Absent','#f43f5e')] %}
-        <div style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:{{ color }};">
-          <div style="width:14px;height:14px;border-radius:50%;background:{{ color }};"></div>{{ label }}
+      <!-- Live tally. Everyone starts as Present, so the teacher only taps the
+           exceptions and can confirm the totals before saving. -->
+      <div style="padding:12px 24px;background:#f8fafc;border-bottom:1px solid #f1f5f9;display:flex;gap:10px;flex-wrap:wrap;">
+        {% for status, label, color, bg in [
+            ('present','Present','#047857','#d1fae5'),
+            ('late','Late','#b45309','#fef3c7'),
+            ('absent','Absent','#b91c1c','#fee2e2')] %}
+        <div style="display:flex;align-items:center;gap:8px;background:{{ bg }};color:{{ color }};
+                    border-radius:999px;padding:6px 14px;font-size:13px;font-weight:700;">
+          <div style="width:10px;height:10px;border-radius:50%;background:currentColor;"></div>
+          {{ label }}: <span data-count="{{ status }}">0</span>
         </div>
         {% endfor %}
       </div>
@@ -143,7 +149,18 @@ function updateRow(studentId, status) {
       btn.style.borderColor = 'transparent';
     }
   });
+  refreshCounts();
 }
+
+/** Keep the header tally in step with the rows. */
+function refreshCounts() {
+  ['present','late','absent'].forEach(s => {
+    const n = document.querySelectorAll(`input[type="radio"][value="${s}"]:checked`).length;
+    const el = document.querySelector(`[data-count="${s}"]`);
+    if (el) el.textContent = n;
+  });
+}
+refreshCounts();
 
 function markAll(status) {
   document.querySelectorAll(`input[type="radio"][value="${status}"]`).forEach(radio => {
