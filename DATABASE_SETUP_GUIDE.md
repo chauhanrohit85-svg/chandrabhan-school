@@ -75,7 +75,10 @@ rather than falling back to SQLite, and prints the exact reason:
 | `no PostgreSQL driver could be imported` | `psycopg2` will not import for the running Python | Keep `.python-version` pinned; `psycopg2-binary` has no wheels for Python 3.13 |
 | `must be a PostgreSQL URL` | the value is not a `postgres://` / `postgresql://` URL | Paste the full Neon connection string |
 | `Could not establish the PostgreSQL connection` | Neon unreachable after 5 retries | Check the Neon project is not suspended, and that the password in the URL is current |
-| `SECRET_KEY is not set` | env var missing | Add a long random `SECRET_KEY` |
+
+`DATABASE_URL` is the only variable you need to set. The session key is
+generated and stored automatically, and production settings are detected from
+the hosting environment.
 
 **3. Verify persistence end to end.** Note the row counts on Storage
 Diagnostics, add a student, trigger a manual redeploy, then reload the page. On

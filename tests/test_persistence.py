@@ -262,9 +262,6 @@ def test_render_environment_without_database_url_raises_runtime_error(monkeypatc
 
     monkeypatch.setenv('RENDER', 'true')
     monkeypatch.delenv('DATABASE_URL', raising=False)
-    # Supply a real secret so the failure we assert on is the database one and
-    # not the (also fatal, but separate) default-SECRET_KEY guard.
-    monkeypatch.setenv('SECRET_KEY', 'a-real-secret-for-this-test')
 
     with pytest.raises(DatabaseConfigError) as exc_info:
         create_app('production')

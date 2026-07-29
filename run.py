@@ -16,9 +16,18 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(na
 logger = logging.getLogger(__name__)
 
 from app import create_app  # noqa: E402
+from app.config import is_managed_host  # noqa: E402
+
+# Pick the right settings automatically. Running on a hosting service means
+# production; a laptop means development. FLASK_ENV still overrides, but nobody
+# has to set it for the app to behave correctly once deployed.
+config_name = os.environ.get('FLASK_ENV', '').strip() or (
+    'production' if is_managed_host() else 'development'
+)
 
 try:
-    app = create_app(os.environ.get('FLASK_ENV', 'development'))
+    app = create_app(config_name)
+    logger.info(f'Started with the "{config_name}" configuration.')
 except Exception as exc:
     logger.critical('=' * 74)
     logger.critical('STARTUP FAILED — the application will not serve requests.')

@@ -130,15 +130,20 @@ Admins can resolve alerts from the Alerts dashboard.
 
 1. Push to GitHub
 2. Connect repo to [Render](https://render.com)
-3. Set environment variables in the Render dashboard:
-   - `DATABASE_URL` = your Neon PostgreSQL connection string (**required**)
-   - `SECRET_KEY` = a long random string (**required**)
-   - `FLASK_ENV` = `production`
+3. Set one environment variable in the Render dashboard:
+   - `DATABASE_URL` = your Neon PostgreSQL connection string (**the only one required**)
 4. Build command: `pip install -r requirements.txt`
 5. Start command: `gunicorn run:app`
 
-Tables are created and master accounts seeded automatically at startup, so there
-is no separate migration step.
+Everything else configures itself:
+
+- **`SECRET_KEY`** is generated on first run and stored in the database, so it
+  stays the same across restarts and nobody is signed out by a deploy. Set it
+  explicitly if you prefer to control it.
+- **`FLASK_ENV`** is inferred — production settings are used automatically when
+  running on a hosting service, development on a laptop.
+- Tables are created and master accounts seeded at startup, so there is no
+  separate migration step.
 
 ### Storage guarantees
 

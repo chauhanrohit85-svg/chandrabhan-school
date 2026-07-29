@@ -9,6 +9,27 @@ import bcrypt
 
 
 # ---------------------------------------------------------------------------
+# AppSetting — small key/value store for values the app manages itself
+# ---------------------------------------------------------------------------
+class AppSetting(db.Model):
+    """
+    Settings the application generates and remembers on its own.
+
+    Used for the session signing key. Keeping it in the database means a school
+    does not have to set it by hand in a hosting dashboard, and it stays the
+    same across restarts, so nobody gets logged out on every deploy.
+    """
+    __tablename__ = 'app_settings'
+
+    key = db.Column(db.String(64), primary_key=True)
+    value = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<AppSetting {self.key}>'
+
+
+# ---------------------------------------------------------------------------
 # User Model
 # ---------------------------------------------------------------------------
 class User(UserMixin, db.Model):

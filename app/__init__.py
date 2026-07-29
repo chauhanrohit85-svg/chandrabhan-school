@@ -19,6 +19,7 @@ school records silently.
 """
 import os
 import time
+import secrets
 import logging
 
 from flask import Flask, jsonify, redirect, url_for, render_template_string
@@ -68,6 +69,38 @@ def _init_schema(app):
         seed_db(app)
 
 
+def _load_or_create_secret_key(app):
+    """
+    Return a stable session signing key, generating one on first run.
+
+    A predictable key would let anyone forge a login cookie, but requiring the
+    school to paste a random string into a hosting dashboard turned out to be
+    the hardest step of setup. So the key is generated once and kept in the
+    database: unpredictable, unchanged across restarts, and nothing to
+    configure. SECRET_KEY in the environment still wins if it is set.
+    """
+    from app.models import AppSetting
+
+    with app.app_context():
+        existing = db.session.get(AppSetting, 'secret_key')
+        if existing and existing.value:
+            return existing.value
+
+        generated = secrets.token_urlsafe(48)
+        try:
+            db.session.add(AppSetting(key='secret_key', value=generated))
+            db.session.commit()
+            logger.info('Generated a new session signing key and stored it in the database.')
+            return generated
+        except Exception:
+            # Another worker booting at the same moment may have inserted it first.
+            db.session.rollback()
+            racer = db.session.get(AppSetting, 'secret_key')
+            if racer and racer.value:
+                return racer.value
+            raise
+
+
 def create_app(config_name: str = 'default') -> Flask:
     app = Flask(__name__, instance_relative_config=True)
     app.config.from_object(config.get(config_name, config['default']))
@@ -75,17 +108,11 @@ def create_app(config_name: str = 'default') -> Flask:
     # ── Secret key ────────────────────────────────────────────────────────
     # Read the environment directly rather than trusting the config class
     # attribute, which is evaluated once at import time and so would miss a
-    # value set afterwards. A predictable secret lets anyone forge a session
-    # cookie and sign in as the director, so it is required off the dev machine.
+    # value set afterwards. If it is not set, one is generated and stored in the
+    # database further down, once the connection is up.
     env_secret = os.environ.get('SECRET_KEY', '').strip()
     if env_secret:
         app.config['SECRET_KEY'] = env_secret
-    elif is_managed_host():
-        raise RuntimeError(
-            'SECRET_KEY is not set, so the built-in development default would be used '
-            'and session cookies would be forgeable by anyone. Set SECRET_KEY in the '
-            'service environment variables to a long random string and redeploy.'
-        )
 
     # ── Database binding (must happen before db.init_app) ─────────────────
     uri, engine_options = resolve_database_uri(config_name)
@@ -138,6 +165,11 @@ def create_app(config_name: str = 'default') -> Flask:
         try:
             app.config['DB_ENGINE_NAME'] = _verify_connection(app)
             _init_schema(app)
+
+            # Needs the schema to exist, so it happens after _init_schema.
+            if not env_secret:
+                app.config['SECRET_KEY'] = _load_or_create_secret_key(app)
+
             logger.info(f"Database ready: {app.config['DB_ENGINE_NAME']}")
         except Exception as exc:
             app.config['DB_ERROR'] = f'{type(exc).__name__}: {exc}'

@@ -155,4 +155,11 @@ def seed(app_instance=None):
 
 
 if __name__ == '__main__':
-    seed()
+    # Some deployments still call this from their build step. Seeding also runs
+    # automatically at startup, so a failure here (for example, the build
+    # machine cannot reach the database) must not fail the whole deploy.
+    try:
+        seed()
+    except Exception as exc:
+        print(f'[WARN] Could not seed during build: {type(exc).__name__}: {exc}')
+        print('[WARN] This is not fatal. The application seeds itself on startup.')
