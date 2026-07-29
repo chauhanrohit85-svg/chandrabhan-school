@@ -435,6 +435,83 @@ def backup_restore():
     return redirect(url_for('director.backup'))
 
 
+# ---------------------------------------------------------------------------
+# Staff accounts (Director only)
+# ---------------------------------------------------------------------------
+MIN_PASSWORD_LENGTH = 8
+
+
+@director_bp.route('/staff')
+@login_required
+@director_required
+def staff():
+    """
+    Every account in one place, including the Principal's.
+
+    The Principal deliberately cannot reach director or administrator accounts,
+    so the Director is the recovery path when one of those passwords is lost.
+    """
+    users = User.query.order_by(User.role, User.full_name).all()
+    return render_template('director/staff.html',
+        users=users,
+        min_length=MIN_PASSWORD_LENGTH,
+    )
+
+
+@director_bp.route('/staff/<int:user_id>/password', methods=['POST'])
+@login_required
+@director_required
+def reset_staff_password(user_id):
+    user = db.session.get(User, user_id)
+    if not user:
+        flash('That account no longer exists.', 'danger')
+        return redirect(url_for('director.staff'))
+
+    new_password = request.form.get('new_password', '')
+    if len(new_password) < MIN_PASSWORD_LENGTH:
+        flash(f'Please choose a password of at least {MIN_PASSWORD_LENGTH} characters.', 'warning')
+        return redirect(url_for('director.staff'))
+
+    try:
+        user.set_password(new_password)
+        db.session.commit()
+        current_app.logger.info(
+            f'Director {current_user.username} reset the password for {user.username}')
+        flash(f'Password reset for {user.full_name}. Give it to them privately and '
+              f'ask them to change it from "Change My Password".', 'success')
+    except Exception as exc:
+        db.session.rollback()
+        current_app.logger.exception('Director password reset failed')
+        flash(f'Could not reset the password: {exc}', 'danger')
+
+    return redirect(url_for('director.staff'))
+
+
+@director_bp.route('/staff/<int:user_id>/toggle', methods=['POST'])
+@login_required
+@director_required
+def toggle_staff(user_id):
+    user = db.session.get(User, user_id)
+    if not user:
+        flash('That account no longer exists.', 'danger')
+        return redirect(url_for('director.staff'))
+
+    if user.id == current_user.id:
+        # Locking yourself out would leave nobody able to reach these controls.
+        flash('You cannot deactivate your own Director account.', 'warning')
+        return redirect(url_for('director.staff'))
+
+    try:
+        user.is_active = 0 if user.is_active else 1
+        db.session.commit()
+        flash(f'{user.full_name} has been {"activated" if user.is_active else "deactivated"}.', 'info')
+    except Exception as exc:
+        db.session.rollback()
+        flash(f'Could not update the account: {exc}', 'danger')
+
+    return redirect(url_for('director.staff'))
+
+
 @director_bp.route('/diagnostics')
 @login_required
 @director_required

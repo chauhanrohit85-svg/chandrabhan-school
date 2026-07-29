@@ -10,9 +10,14 @@ from flask import render_template, redirect, url_for, flash, request, current_ap
 from flask_login import login_user, logout_user, login_required, current_user
 
 from app.auth import auth_bp
+from app.extensions import db
 from app.models import User
 
 logger = logging.getLogger(__name__)
+
+# Short enough to be memorable for staff who type it on a phone, long enough
+# that it is not trivially guessable.
+MIN_PASSWORD_LENGTH = 8
 
 
 def _is_safe_redirect_target(target: str) -> bool:
@@ -52,6 +57,46 @@ def login():
 
     return render_template('auth/login.html',
                            school_name=current_app.config['SCHOOL_NAME'])
+
+
+@auth_bp.route('/password', methods=['GET', 'POST'])
+@login_required
+def change_password():
+    """
+    Let any signed-in user change their own password.
+
+    Without this there was no self-service route at all: only an administrator
+    could set passwords, and no one could reach the director or principal
+    accounts through the interface — so the accounts handed to staff could never
+    be rotated away from the values they were created with.
+    """
+    if request.method == 'POST':
+        current = request.form.get('current_password', '')
+        new = request.form.get('new_password', '')
+        confirm = request.form.get('confirm_password', '')
+
+        if not current_user.check_password(current):
+            flash('Your current password is not correct.', 'danger')
+        elif len(new) < MIN_PASSWORD_LENGTH:
+            flash(f'Your new password must be at least {MIN_PASSWORD_LENGTH} characters long.', 'warning')
+        elif new != confirm:
+            flash('The two new passwords do not match. Please type them again.', 'warning')
+        elif new == current:
+            flash('Your new password must be different from your current one.', 'warning')
+        else:
+            try:
+                current_user.set_password(new)
+                db.session.commit()
+                logger.info(f'Password changed for user {current_user.username}')
+                flash('Your password has been changed. Use it the next time you sign in.', 'success')
+                return _role_redirect(current_user)
+            except Exception as exc:
+                db.session.rollback()
+                logger.exception('Password change failed')
+                flash(f'Could not save the new password: {exc}', 'danger')
+
+    return render_template('auth/change_password.html',
+                           min_length=MIN_PASSWORD_LENGTH)
 
 
 @auth_bp.route('/logout')

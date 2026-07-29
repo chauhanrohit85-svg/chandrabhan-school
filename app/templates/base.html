@@ -65,6 +65,10 @@
              class="nav-link {% if 'director.backup' in request.endpoint %}active{% endif %}">
             <span class="nav-icon">💾</span> System Backup & Restore
           </a>
+          <a href="{{ url_for('director.staff') }}"
+             class="nav-link {% if 'director.staff' in request.endpoint or request.endpoint == 'director.reset_staff_password' %}active{% endif %}">
+            <span class="nav-icon">👥</span> Staff Accounts
+          </a>
           <a href="{{ url_for('director.diagnostics') }}"
              class="nav-link {% if request.endpoint == 'director.diagnostics' %}active{% endif %}">
             <span class="nav-icon">🩺</span> Storage Diagnostics
@@ -187,6 +191,10 @@
           <div style="font-size:11px;color:#94a3b8;text-transform:capitalize;">{{ current_user.role }}</div>
         </div>
       </div>
+      <a href="{{ url_for('auth.change_password') }}"
+         class="nav-link {% if request.endpoint == 'auth.change_password' %}active{% endif %}">
+        <span class="nav-icon">🔐</span> Change My Password
+      </a>
       <a href="{{ url_for('auth.logout') }}" class="nav-link" style="color:#f87171;">
         <span class="nav-icon">🚪</span> Logout
       </a>

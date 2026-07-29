@@ -27,6 +27,17 @@ def admin_required(f):
     return decorated
 
 
+# The Principal manages classroom staff only. Director and administrator
+# accounts are deliberately out of reach: edit_user accepts any user id, so
+# without this the Principal could open the Director's account by URL, reset its
+# password and sign in as the super-admin they are meant to be accountable to.
+ADMIN_MANAGEABLE_ROLES = ('teacher', 'tv')
+
+
+def _admin_may_manage(user) -> bool:
+    return user.role in ADMIN_MANAGEABLE_ROLES
+
+
 # ---------------------------------------------------------------------------
 # Alert generation helper
 # ---------------------------------------------------------------------------
@@ -504,6 +515,15 @@ def add_user():
     role = request.form.get('role', 'teacher')
     class_id = request.form.get('assigned_class_id') or None
 
+    if role not in ADMIN_MANAGEABLE_ROLES:
+        flash('You can only create teacher and classroom-display accounts. '
+              'Ask the Director to create administrator accounts.', 'danger')
+        return redirect(url_for('admin.users'))
+
+    if len(password) < 8:
+        flash('Please choose a password of at least 8 characters.', 'warning')
+        return redirect(url_for('admin.users'))
+
     if User.query.filter_by(username=username).first():
         flash(f'Username "{username}" already exists.', 'danger')
         return redirect(url_for('admin.users'))
@@ -528,15 +548,26 @@ def edit_user(user_id):
     user = User.query.get_or_404(user_id)
     classes = Class.query.order_by(Class.grade, Class.section).all()
 
+    if not _admin_may_manage(user):
+        flash('Director and administrator accounts can only be managed by the Director.', 'danger')
+        return redirect(url_for('admin.users'))
+
     if request.method == 'POST':
         try:
             user.full_name = request.form.get('full_name', user.full_name).strip()
-            user.role = request.form.get('role', user.role)
+            # A role change is restricted to the same set, so this cannot be used
+            # to promote a teacher into an administrator.
+            new_role = request.form.get('role', user.role)
+            if new_role in ADMIN_MANAGEABLE_ROLES:
+                user.role = new_role
             class_id = request.form.get('assigned_class_id') or None
             user.assigned_class_id = int(class_id) if class_id else None
             user.is_active = 1 if request.form.get('is_active') else 0
             new_pw = request.form.get('new_password', '')
             if new_pw:
+                if len(new_pw) < 8:
+                    flash('Please choose a password of at least 8 characters.', 'warning')
+                    return redirect(url_for('admin.edit_user', user_id=user_id))
                 user.set_password(new_pw)
             db.session.commit()
             flash(f'Updated {user.full_name} successfully.', 'success')
@@ -553,6 +584,9 @@ def edit_user(user_id):
 @admin_required
 def toggle_user(user_id):
     user = User.query.get_or_404(user_id)
+    if not _admin_may_manage(user):
+        flash('Director and administrator accounts can only be managed by the Director.', 'danger')
+        return redirect(url_for('admin.users'))
     try:
         user.is_active = 0 if user.is_active else 1
         db.session.commit()

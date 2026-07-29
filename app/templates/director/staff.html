@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}Staff Accounts{% endblock %}
+{% block page_title %}Staff Accounts{% endblock %}
+
+{% block content %}
+<div style="max-width:1000px;margin:0 auto;">
+
+  <div style="background:#eef2ff;border:1px solid #c7d2fe;border-radius:12px;padding:14px 18px;margin-bottom:20px;font-size:14px;color:#3730a3;">
+    <strong>Handing over an account?</strong>
+    Reset the password here, give it to the person privately, and ask them to change it
+    themselves from <em>Change My Password</em>. You cannot read anyone's existing password —
+    they are stored scrambled and cannot be recovered, only replaced.
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <h2>👥 All accounts</h2>
+      <span style="font-size:13px;color:#64748b;">{{ users|length }} total</span>
+    </div>
+
+    <div class="table-wrapper">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Username</th>
+            <th>Role</th>
+            <th>Status</th>
+            <th style="min-width:320px;">Set a new password</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for user in users %}
+          <tr>
+            <td style="font-weight:600;color:#1e293b;">{{ user.full_name }}</td>
+            <td><code style="font-size:12.5px;">{{ user.username }}</code></td>
+            <td>
+              <span class="badge {% if user.role == 'director' %}badge-purple
+                                 {% elif user.role == 'admin' %}badge-info
+                                 {% else %}badge-success{% endif %}"
+                    style="text-transform:capitalize;">{{ user.role }}</span>
+            </td>
+            <td>
+              {% if user.is_active %}
+                <span class="badge badge-success">Active</span>
+              {% else %}
+                <span class="badge badge-danger">Disabled</span>
+              {% endif %}
+            </td>
+            <td>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+                <form method="POST" action="{{ url_for('director.reset_staff_password', user_id=user.id) }}"
+                      style="display:flex;gap:6px;align-items:center;"
+                      onsubmit="return confirm('Set a new password for {{ user.full_name }}?');">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                  <input type="text" name="new_password" class="form-control"
+                         placeholder="New password" required minlength="{{ min_length }}"
+                         autocomplete="off"
+                         style="width:180px;font-size:13px;padding:6px 10px;min-height:34px;" />
+                  <button type="submit" class="btn btn-sm btn-primary" style="min-height:34px;">Reset</button>
+                </form>
+
+                {% if user.id != current_user.id %}
+                <form method="POST" action="{{ url_for('director.toggle_staff', user_id=user.id) }}"
+                      onsubmit="return confirm('{{ 'Deactivate' if user.is_active else 'Activate' }} {{ user.full_name }}?');">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                  <button type="submit" class="btn btn-sm btn-outline" style="min-height:34px;">
+                    {{ 'Disable' if user.is_active else 'Enable' }}
+                  </button>
+                </form>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div style="margin-top:16px;background:#f8fafc;border-radius:10px;padding:14px 18px;font-size:13.5px;color:#475569;">
+    <strong>Who can reset whom:</strong> the Principal can reset teacher and classroom-display
+    accounts only. Director and administrator accounts can be reset here, by you. Everyone can
+    change their own password at any time.
+  </div>
+
+</div>
+{% endblock %}
