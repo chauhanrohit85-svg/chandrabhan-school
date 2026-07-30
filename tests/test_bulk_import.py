@@ -299,3 +299,65 @@ def test_a_section_with_students_is_never_removed(admin_client, app):
     with app.app_context():
         from app.extensions import db
         assert db.session.get(Class, occupied) is not None
+
+
+# ---------------------------------------------------------------------------
+# Import must finish inside a web request
+# ---------------------------------------------------------------------------
+def test_importing_a_class_of_teachers_is_not_slow(app):
+    """
+    Regression: importing 22 teachers hashed the same password 22 times. bcrypt
+    is deliberately slow, so the request ran past the server's 30-second limit
+    and the worker was killed — the user saw a 502 and nothing was saved.
+    """
+    import time
+
+    listing = '\n'.join(
+        f"Speed Test {n} Ma'am, Class {(n % 10) + 1}-{'A' if n % 2 else 'B'}"
+        for n in range(22))
+
+    with app.app_context():
+        start = time.time()
+        created, _linked, _skipped = commit_teachers(listing, '2026-27', 'startingpw1')
+        elapsed = time.time() - start
+
+    assert created == 22
+    # One hash, not 22. Generous bound so this does not turn flaky on slow CI,
+    # while still failing loudly if per-user hashing comes back.
+    assert elapsed < 5, f'22 teachers took {elapsed:.1f}s — hashing per user again?'
+
+
+def test_imported_teachers_can_actually_log_in(app):
+    """The shared hash must still authenticate each teacher individually."""
+    with app.app_context():
+        commit_teachers("Login Check Ma'am, Class 9-B", '2026-27', 'sharedstart1')
+        user = User.query.filter_by(full_name="Login Check Ma'am").first()
+        assert user.check_password('sharedstart1')
+        assert not user.check_password('wrongpassword')
+
+
+def test_a_large_student_import_is_not_slow(app):
+    """A real class list runs to hundreds of rows across the whole school."""
+    import time
+
+    listing = '\n'.join(f'{n:03d}, Speed Child {n}, Class 10-B' for n in range(1, 201))
+
+    with app.app_context():
+        start = time.time()
+        created, _ = commit_students(listing, '2026-27')
+        elapsed = time.time() - start
+
+    assert created == 200
+    assert elapsed < 10, f'200 students took {elapsed:.1f}s'
+
+
+def test_gunicorn_timeout_is_raised_above_the_default():
+    """
+    The default 30s is too tight for a slow cloud instance doing real work, and
+    exceeding it kills the worker mid-request with an unexplained 502.
+    """
+    import pathlib
+    procfile = pathlib.Path('Procfile').read_text(encoding='utf-8')
+    assert '--timeout' in procfile
+    timeout = int(procfile.split('--timeout')[1].split()[0])
+    assert timeout >= 60, f'gunicorn timeout is only {timeout}s'

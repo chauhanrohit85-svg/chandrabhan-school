@@ -12,6 +12,8 @@ import io
 import re
 import unicodedata
 
+import bcrypt
+
 from app.extensions import db
 from app.models import User, Class, Student
 
@@ -151,6 +153,17 @@ def _looks_like_header(cells):
 # ---------------------------------------------------------------------------
 # Teachers
 # ---------------------------------------------------------------------------
+def _class_lookup(academic_year):
+    """All sections for the year, keyed by (grade, section).
+
+    Loaded once per import. Querying per row meant a network round trip to the
+    cloud database for every line, which is what pushed a 22-row import past the
+    request timeout.
+    """
+    return {(c.grade, c.section): c
+            for c in Class.query.filter_by(academic_year=academic_year).all()}
+
+
 def preview_teachers(text, academic_year):
     """
     Work out what an import would do, without changing anything.
@@ -162,7 +175,11 @@ def preview_teachers(text, academic_year):
     if rows and _looks_like_header(rows[0]):
         rows = rows[1:]
 
-    taken = {u.username for u in User.query.all()}
+    all_users = User.query.all()
+    taken = {u.username for u in all_users}
+    by_full_name = {u.full_name: u for u in all_users if u.role == 'teacher'}
+    classes = _class_lookup(academic_year)
+
     seen_names = {}
     results = []
 
@@ -186,8 +203,7 @@ def preview_teachers(text, academic_year):
             continue
 
         grade, section = parsed
-        cls = Class.query.filter_by(grade=grade, section=section,
-                                    academic_year=academic_year).first()
+        cls = classes.get((grade, section))
         entry['class_name'] = f'{Class.GRADE_MAP.get(grade, grade)}-{section}'
         if not cls:
             entry['message'] = f'{entry["class_name"]} does not exist yet.'
@@ -204,7 +220,7 @@ def preview_teachers(text, academic_year):
             results.append(entry)
             continue
 
-        existing = User.query.filter_by(full_name=name, role='teacher').first()
+        existing = by_full_name.get(name)
         if existing:
             entry['username'] = existing.username
             entry['status'] = 'exists'
@@ -227,27 +243,46 @@ def commit_teachers(text, academic_year, default_password):
 
     from app.models import TeacherClassSubject
 
+    # Hash the starting password ONCE and reuse it for everyone in this import.
+    #
+    # bcrypt is intentionally slow — around 0.8s per hash here and several times
+    # that on a small cloud instance. Hashing individually meant a 22-teacher
+    # import spent well over a minute in bcrypt alone, and the web server killed
+    # the request at 30 seconds, so nothing was ever saved.
+    #
+    # The trade-off is that everyone imported together shares an identical hash,
+    # which reveals they share a password. They already do — it is a temporary
+    # starting password that each teacher replaces from "Change My Password",
+    # and doing so gives them their own salt.
+    shared_hash = bcrypt.hashpw(
+        default_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+    existing_users = {u.username: u for u in User.query.all()}
+    existing_maps = {(m.teacher_id, m.class_id, m.subject)
+                     for m in TeacherClassSubject.query.all()}
+
     for entry in entries:
         if entry['status'] == 'error':
             skipped += 1
             continue
 
-        user = User.query.filter_by(username=entry['username']).first()
+        user = existing_users.get(entry['username'])
         if not user:
             user = User(username=entry['username'], full_name=entry['name'],
-                        role='teacher', assigned_class_id=entry['class_id'])
-            user.set_password(default_password)
+                        role='teacher', assigned_class_id=entry['class_id'],
+                        password_hash=shared_hash)
             db.session.add(user)
             db.session.flush()
+            existing_users[user.username] = user
             created += 1
         elif user.assigned_class_id is None:
             user.assigned_class_id = entry['class_id']
 
-        mapping = TeacherClassSubject.query.filter_by(
-            teacher_id=user.id, class_id=entry['class_id'], subject=entry['subject']).first()
-        if not mapping:
+        key = (user.id, entry['class_id'], entry['subject'])
+        if key not in existing_maps:
             db.session.add(TeacherClassSubject(
                 teacher_id=user.id, class_id=entry['class_id'], subject=entry['subject']))
+            existing_maps.add(key)
             linked += 1
 
     db.session.commit()
@@ -262,6 +297,12 @@ def preview_students(text, academic_year):
     rows = _read_rows(text)
     if rows and _looks_like_header(rows[0]):
         rows = rows[1:]
+
+    # Loaded once rather than per row — a class list runs to hundreds of lines,
+    # and a round trip to the cloud database for each one is what made a large
+    # import slow enough to be cut off by the request timeout.
+    classes = _class_lookup(academic_year)
+    existing_rolls = {(s.class_id, s.roll_number): s for s in Student.query.all()}
 
     results = []
     seen = set()
@@ -287,8 +328,7 @@ def preview_students(text, academic_year):
             continue
 
         grade, section = parsed
-        cls = Class.query.filter_by(grade=grade, section=section,
-                                    academic_year=academic_year).first()
+        cls = classes.get((grade, section))
         entry['class_name'] = f'{Class.GRADE_MAP.get(grade, grade)}-{section}'
         if not cls:
             entry['message'] = f'{entry["class_name"]} does not exist yet.'
@@ -304,7 +344,7 @@ def preview_students(text, academic_year):
             continue
         seen.add(key)
 
-        existing = Student.query.filter_by(class_id=cls.id, roll_number=roll).first()
+        existing = existing_rolls.get(key)
         if existing:
             entry['status'] = 'exists'
             entry['message'] = f'Roll {roll} already used by {existing.full_name}.'
