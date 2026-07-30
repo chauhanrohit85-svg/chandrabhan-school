@@ -91,6 +91,10 @@
              class="nav-link {% if 'admin.student' in request.endpoint %}active{% endif %}">
             <span class="nav-icon">🎒</span> Students
           </a>
+          <a href="{{ url_for('admin.bulk_import') }}"
+             class="nav-link {% if request.endpoint == 'admin.bulk_import' %}active{% endif %}">
+            <span class="nav-icon">📥</span> Bulk Import
+          </a>
           <a href="{{ url_for('admin.classes') }}"
              class="nav-link {% if request.endpoint == 'admin.classes' %}active{% endif %}">
             <span class="nav-icon">🏛️</span> Classes
@@ -119,6 +123,10 @@
           <a href="{{ url_for('admin.students') }}"
              class="nav-link {% if 'admin.student' in request.endpoint %}active{% endif %}">
             <span class="nav-icon">🎒</span> Students
+          </a>
+          <a href="{{ url_for('admin.bulk_import') }}"
+             class="nav-link {% if request.endpoint == 'admin.bulk_import' %}active{% endif %}">
+            <span class="nav-icon">📥</span> Bulk Import
           </a>
           <a href="{{ url_for('admin.classes') }}"
              class="nav-link {% if request.endpoint == 'admin.classes' %}active{% endif %}">
