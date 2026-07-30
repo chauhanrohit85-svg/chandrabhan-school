@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+{% block title %}Bulk Import{% endblock %}
+{% block page_title %}Bulk Import{% endblock %}
+
+{% block extra_head %}
+<style>
+  .tabs { display:flex; gap:8px; margin-bottom:20px; flex-wrap:wrap; }
+  .tab {
+    padding:10px 20px; border-radius:10px; font-weight:700; font-size:14px;
+    text-decoration:none; border:2px solid #e2e8f0; color:#64748b; background:#fff;
+  }
+  .tab.active { border-color:#4f46e5; background:#eef2ff; color:#3730a3; }
+
+  .status { font-weight:700; font-size:12px; padding:3px 9px; border-radius:999px; white-space:nowrap; }
+  .status.create { background:#dcfce7; color:#15803d; }
+  .status.exists { background:#fef3c7; color:#92400e; }
+  .status.error  { background:#fee2e2; color:#b91c1c; }
+
+  textarea.paste {
+    width:100%; min-height:220px; font-family:ui-monospace, Menlo, Consolas, monospace;
+    font-size:13px; line-height:1.5; padding:12px; border-radius:10px; border:1.5px solid #cbd5e1;
+  }
+  .summary { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:14px; }
+  .summary div { padding:8px 14px; border-radius:10px; font-size:13.5px; font-weight:700; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div style="max-width:1000px;margin:0 auto;">
+
+  <div class="tabs">
+    <a href="{{ url_for('admin.bulk_import', kind='teachers') }}"
+       class="tab {% if kind == 'teachers' %}active{% endif %}">👩‍🏫 Teachers</a>
+    <a href="{{ url_for('admin.bulk_import', kind='students') }}"
+       class="tab {% if kind == 'students' %}active{% endif %}">🎒 Students</a>
+  </div>
+
+  <!-- What to paste -->
+  <div class="card" style="margin-bottom:20px;">
+    <div class="card-header"><h2>What to paste</h2></div>
+    <div class="card-body" style="font-size:14px;color:#475569;">
+      {% if kind == 'teachers' %}
+        <p style="margin-top:0;">One line per teacher <strong>per class</strong>, in this order:</p>
+        <pre style="background:#f8fafc;padding:12px;border-radius:8px;font-size:13px;overflow-x:auto;">Teacher name, Class, Subject (optional)
+
+Ruchi Ma'am, Class 1-A
+Deepika Parmar Ma'am, Class 1-B
+Ajay Singh Sir, Class 5-A, English</pre>
+        <p>Leave <strong>Subject</strong> empty for a class teacher who covers everything — they will then
+           score all five pillars. A teacher who takes several classes gets one line per class.</p>
+      {% else %}
+        <p style="margin-top:0;">One line per student, in this order:</p>
+        <pre style="background:#f8fafc;padding:12px;border-radius:8px;font-size:13px;overflow-x:auto;">Roll number, Student name, Class, Parent's phone (optional)
+
+01, Aarav Sharma, Class 5-A, 9876543210
+02, Diya Verma, Class 5-A</pre>
+        <p>Roll numbers only need to be unique inside a class, so every class can start again at 01.</p>
+      {% endif %}
+      <p style="margin-bottom:0;">
+        A header row is fine and will be ignored. You can paste straight from Excel.
+        Class names are read loosely — <code>Class 1-A</code>, <code>1st A</code> and <code>1a</code> all work.
+      </p>
+    </div>
+  </div>
+
+  <form method="POST" action="{{ url_for('admin.bulk_import') }}" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+    <input type="hidden" name="kind" value="{{ kind }}" />
+
+    <div class="card" style="margin-bottom:20px;">
+      <div class="card-header"><h2>Paste your list</h2></div>
+      <div class="card-body">
+        <textarea name="data" class="paste"
+                  placeholder="Paste here, or choose a file below…">{{ pasted }}</textarea>
+
+        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:14px;">
+          <label style="font-size:13.5px;font-weight:600;color:#475569;margin:0;">…or upload a .csv file</label>
+          <input type="file" name="file" accept=".csv,.txt" class="form-control"
+                 style="max-width:280px;padding:6px;" />
+        </div>
+
+        {% if kind == 'teachers' %}
+        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:16px;
+                    background:#f8fafc;padding:14px;border-radius:10px;">
+          <label for="default_password" style="font-size:13.5px;font-weight:600;color:#475569;margin:0;">
+            Starting password for every new teacher
+          </label>
+          <input type="text" id="default_password" name="default_password" class="form-control"
+                 value="{{ default_password or 'teacher2026' }}" minlength="8"
+                 style="max-width:220px;" />
+          <span style="font-size:12.5px;color:#94a3b8;">
+            They change it themselves from “Change My Password”.
+          </span>
+        </div>
+        {% endif %}
+
+        <div style="margin-top:18px;">
+          <button type="submit" name="action" value="preview" class="btn btn-primary btn-lg">
+            Check the list
+          </button>
+        </div>
+      </div>
+    </div>
+
+    {% if entries %}
+    <div class="card">
+      <div class="card-header">
+        <h2>Preview — nothing has been saved yet</h2>
+        <span style="font-size:13px;color:#64748b;">{{ entries|length }} row(s)</span>
+      </div>
+      <div class="card-body" style="padding-bottom:0;">
+        <div class="summary">
+          <div style="background:#dcfce7;color:#15803d;">Will be added: {{ counts.get('create', 0) }}</div>
+          <div style="background:#fef3c7;color:#92400e;">Already there: {{ counts.get('exists', 0) }}</div>
+          <div style="background:#fee2e2;color:#b91c1c;">Problems: {{ counts.get('error', 0) }}</div>
+        </div>
+        {% if counts.get('error') %}
+        <p style="font-size:13.5px;color:#b91c1c;margin-bottom:14px;">
+          Rows marked in red will be skipped. Fix them in the box above and check again,
+          or import the rest and add those few by hand.
+        </p>
+        {% endif %}
+      </div>
+
+      <div class="table-wrapper">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              {% if kind == 'students' %}<th>Roll</th>{% endif %}
+              <th>Name</th>
+              <th>Class</th>
+              {% if kind == 'teachers' %}<th>Subject</th><th>Username</th>{% endif %}
+              <th>Result</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for entry in entries %}
+            <tr>
+              <td style="color:#94a3b8;">{{ entry.line }}</td>
+              {% if kind == 'students' %}<td>{{ entry.roll }}</td>{% endif %}
+              <td style="font-weight:600;color:#1e293b;">{{ entry.name or '—' }}</td>
+              <td>{{ entry.class_name if entry.class_name is defined else entry.raw_class }}</td>
+              {% if kind == 'teachers' %}
+              <td>{{ entry.subject }}</td>
+              <td><code style="font-size:12px;">{{ entry.username or '—' }}</code></td>
+              {% endif %}
+              <td>
+                <span class="status {{ entry.status }}">
+                  {% if entry.status == 'create' %}Add
+                  {% elif entry.status == 'exists' %}Skip
+                  {% else %}Problem{% endif %}
+                </span>
+                <div style="font-size:12px;color:#64748b;margin-top:3px;">{{ entry.message }}</div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div style="padding:20px 24px;border-top:1px solid #f1f5f9;display:flex;gap:12px;flex-wrap:wrap;">
+        <button type="submit" name="action" value="commit" class="btn btn-primary btn-lg"
+                {% if not counts.get('create') %}disabled{% endif %}
+                onclick="return confirm('Import {{ counts.get('create', 0) }} row(s) now?');">
+          ✅ Import {{ counts.get('create', 0) }} row(s)
+        </button>
+        <a href="{{ url_for('admin.bulk_import', kind=kind) }}" class="btn btn-outline btn-lg">Start again</a>
+      </div>
+    </div>
+    {% endif %}
+  </form>
+
+</div>
+{% endblock %}

@@ -838,6 +838,122 @@ def execute_promotion():
     return redirect(url_for('admin.promotion'))
 
 
+# ---------------------------------------------------------------------------
+# Bulk Import
+# ---------------------------------------------------------------------------
+@admin_bp.route('/import', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def bulk_import():
+    """
+    Import a teacher or student list in one go.
+
+    Deliberately two-stage: a paste is always previewed row by row before
+    anything is written, because the source is usually a hand-typed register and
+    a misread class name is much easier to fix before import than after.
+    """
+    from app.admin import importer
+
+    academic_year = current_app.config['ACADEMIC_YEAR']
+    kind = request.form.get('kind', request.args.get('kind', 'teachers'))
+    if kind not in ('teachers', 'students'):
+        kind = 'teachers'
+
+    pasted = request.form.get('data', '')
+    default_password = request.form.get('default_password', '').strip()
+    action = request.form.get('action', '')
+    entries = None
+
+    # An uploaded file simply replaces whatever is in the text box.
+    upload = request.files.get('file')
+    if upload and upload.filename:
+        try:
+            pasted = upload.read().decode('utf-8-sig', errors='replace')
+        except Exception as exc:
+            flash(f'Could not read that file: {exc}', 'danger')
+            pasted = ''
+
+    if action in ('preview', 'commit') and pasted.strip():
+        try:
+            if kind == 'teachers':
+                entries = importer.preview_teachers(pasted, academic_year)
+            else:
+                entries = importer.preview_students(pasted, academic_year)
+        except Exception as exc:
+            current_app.logger.exception('Import preview failed')
+            flash(f'Could not read that list: {exc}', 'danger')
+            entries = None
+
+    if action == 'commit' and entries is not None:
+        if kind == 'teachers' and len(default_password) < 8:
+            flash('Please set a starting password of at least 8 characters for the new teachers.', 'warning')
+        else:
+            try:
+                if kind == 'teachers':
+                    created, linked, skipped = importer.commit_teachers(
+                        pasted, academic_year, default_password)
+                    flash(f'Imported {created} new teacher account(s), linked {linked} class(es). '
+                          f'{skipped} row(s) skipped.', 'success')
+                else:
+                    created, skipped = importer.commit_students(pasted, academic_year)
+                    flash(f'Imported {created} student(s). {skipped} row(s) skipped.', 'success')
+                return redirect(url_for('admin.bulk_import', kind=kind))
+            except Exception as exc:
+                db.session.rollback()
+                current_app.logger.exception('Import failed')
+                flash(f'Nothing was imported — the list could not be saved: {exc}', 'danger')
+
+    counts = {}
+    if entries:
+        for entry in entries:
+            counts[entry['status']] = counts.get(entry['status'], 0) + 1
+
+    return render_template('admin/bulk_import.html',
+        kind=kind,
+        pasted=pasted,
+        entries=entries,
+        counts=counts,
+        default_password=default_password,
+        academic_year=academic_year,
+    )
+
+
+@admin_bp.route('/classes/<int:class_id>/delete', methods=['POST'])
+@login_required
+@admin_required
+def delete_class(class_id):
+    """
+    Remove a class section the school does not actually run.
+
+    Only ever allowed when the section is completely unused, so this can never
+    be the thing that loses a child's records.
+    """
+    cls = Class.query.get_or_404(class_id)
+
+    from app.models import TeacherClassSubject
+    student_count = Student.query.filter_by(class_id=class_id).count()
+    mapping_count = TeacherClassSubject.query.filter_by(class_id=class_id).count()
+    teacher_count = User.query.filter_by(assigned_class_id=class_id).count()
+    log_count = TeacherDailyLog.query.filter_by(class_id=class_id).count()
+
+    if student_count or mapping_count or teacher_count or log_count:
+        flash(f'{cls.display_name} is still in use '
+              f'({student_count} student(s), {teacher_count} teacher(s), '
+              f'{log_count} log(s)) and was not deleted.', 'warning')
+        return redirect(url_for('admin.classes'))
+
+    try:
+        name = cls.display_name
+        db.session.delete(cls)
+        db.session.commit()
+        flash(f'Removed the unused section {name}.', 'success')
+    except Exception as exc:
+        db.session.rollback()
+        flash(f'Could not remove that section: {exc}', 'danger')
+
+    return redirect(url_for('admin.classes'))
+
+
 @admin_bp.route('/students/<int:student_id>')
 @login_required
 @admin_required

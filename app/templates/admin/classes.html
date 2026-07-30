@@ -20,8 +20,22 @@
             <td>{{ cls.assigned_teacher.full_name if cls.assigned_teacher else '—' }}</td>
             <td><span class="badge badge-info">{{ cls.students.count() }}</span></td>
             <td>
-              <a href="{{ url_for('tv.class_view', class_id=cls.id) }}" target="_blank"
-                 class="btn btn-outline btn-sm">📺 TV View</a>
+              <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                <a href="{{ url_for('tv.class_view', class_id=cls.id) }}" target="_blank"
+                   class="btn btn-outline btn-sm">📺 TV View</a>
+                {# Only offered for sections the school does not actually run, so
+                   deleting one can never lose a child's records. #}
+                {% if cls.students.count() == 0 and not cls.assigned_teacher and cls.teacher_subjects.count() == 0 %}
+                <form method="POST" action="{{ url_for('admin.delete_class', class_id=cls.id) }}"
+                      style="display:inline;"
+                      onsubmit="return confirm('Remove the unused section {{ cls.display_name }}?');">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                  <button type="submit" class="btn btn-sm btn-outline"
+                          style="color:#b91c1c;border-color:#fecaca;"
+                          title="This section has no students or teachers">Remove</button>
+                </form>
+                {% endif %}
+              </div>
             </td>
           </tr>
           {% else %}
