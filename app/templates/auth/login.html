@@ -51,8 +51,11 @@
 
       <div class="login-field">
         <label for="username">Username</label>
+        {# autocapitalize/autocorrect off: phone keyboards otherwise turn
+           "chandresh" into "Chandresh" or autocorrect the name outright. #}
         <input type="text" id="username" name="username" placeholder="Enter your username"
                required autofocus autocomplete="username"
+               autocapitalize="none" autocorrect="off" spellcheck="false"
                style="font-size:16px;" />
       </div>
 

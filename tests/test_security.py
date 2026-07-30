@@ -184,6 +184,37 @@ def test_login_next_param_cannot_leave_the_site(client, hostile):
     assert 'evil.example.com' not in resp.headers['Location']
 
 
+def test_username_is_matched_without_regard_to_case(app):
+    """
+    Regression: phone keyboards capitalise the first letter, so a teacher typing
+    their own username sends "Chandresh" and an exact-match lookup rejected them
+    with "invalid username or password" — which reads as a wrong password.
+    """
+    for typed in ('test_admin', 'Test_Admin', 'TEST_ADMIN'):
+        client = app.test_client()
+        resp = client.post('/auth/login',
+                           data={'username': typed, 'password': 'admin123'})
+        assert resp.status_code in (301, 302), f'{typed!r} was rejected'
+        assert '/admin/dashboard' in resp.headers['Location']
+
+
+def test_surrounding_spaces_in_a_username_are_ignored(app):
+    """Copy-pasting a username off a handout drags a space along with it."""
+    client = app.test_client()
+    resp = client.post('/auth/login',
+                       data={'username': '  test_admin  ', 'password': 'admin123'})
+    assert resp.status_code in (301, 302)
+    assert '/admin/dashboard' in resp.headers['Location']
+
+
+def test_a_genuinely_wrong_password_is_still_rejected(app):
+    client = app.test_client()
+    resp = client.post('/auth/login',
+                       data={'username': 'TEST_ADMIN', 'password': 'not-the-password'},
+                       follow_redirects=True)
+    assert b'Invalid username or password' in resp.data
+
+
 def test_login_next_param_allows_relative_path(client):
     resp = client.post('/auth/login?next=/admin/students',
                        data={'username': 'test_admin', 'password': 'admin123'})

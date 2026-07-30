@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 
 from flask import render_template, redirect, url_for, flash, request, current_app
 from flask_login import login_user, logout_user, login_required, current_user
+from sqlalchemy import func
 
 from app.auth import auth_bp
 from app.extensions import db
@@ -43,7 +44,15 @@ def login():
         password = request.form.get('password', '')
         remember = request.form.get('remember') == 'on'
 
-        user = User.query.filter_by(username=username, is_active=1).first()
+        # Match the username without regard to case. Phone keyboards capitalise
+        # the first letter by default, so a teacher typing their own username
+        # gets "Chandresh" and an exact-match lookup rejects them with "invalid
+        # username or password" — which reads as a wrong password, not a
+        # capital letter.
+        user = User.query.filter(
+            func.lower(User.username) == username.lower(),
+            User.is_active == 1,
+        ).first()
 
         if user and user.check_password(password):
             login_user(user, remember=remember)
