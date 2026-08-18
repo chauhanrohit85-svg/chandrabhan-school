@@ -42,8 +42,19 @@
           </select>
         </div>
         <div class="form-group">
-          <label class="form-label">New Password (leave blank to keep current)</label>
-          <input type="password" name="new_password" class="form-control" placeholder="New password…" />
+          <label class="form-label" for="new_password">New Password (leave blank to keep current)</label>
+          {# Deliberately type="text", not "password": an administrator setting
+             someone else's password needs to read it back to them, and hiding it
+             behind dots made phone typos invisible. minlength stops the browser
+             submitting a too-short value, which previously failed server-side
+             with a warning that scrolled off the top of a phone screen. #}
+          <input type="text" id="new_password" name="new_password" class="form-control"
+                 placeholder="Type here only if you want to reset it…"
+                 minlength="8" autocomplete="off" spellcheck="false" />
+          <div style="font-size:12.5px;color:#94a3b8;margin-top:6px;">
+            At least 8 characters. Give it to the teacher privately and ask them to
+            set their own from “Change My Password”.
+          </div>
         </div>
         <label class="form-check" style="margin-bottom:24px;">
           <input type="checkbox" name="is_active" {% if user.is_active %}checked{% endif %} />

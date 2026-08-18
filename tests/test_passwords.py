@@ -259,3 +259,41 @@ def test_password_reset_endpoints_are_director_only(admin_client, app):
 
     with app.app_context():
         assert User.query.get(target_id).password_hash == before
+
+
+def test_admin_password_field_cannot_silently_fail(admin_client, app):
+    """
+    The reset field must tell the browser its minimum length. Without it the
+    form submits, the server rejects it, and the warning renders at the top of
+    the page — off screen on a phone, so it looks like nothing happened.
+    """
+    with app.app_context():
+        teacher_id = User.query.filter_by(role='teacher').first().id
+
+    body = admin_client.get(f'/admin/users/{teacher_id}/edit').get_data(as_text=True)
+    assert 'name="new_password"' in body
+    assert 'minlength="8"' in body
+    assert 'At least 8 characters' in body
+
+
+def test_principal_can_reset_a_teacher_password(admin_client, app):
+    """The end-to-end path a principal actually uses when a teacher forgets."""
+    with app.app_context():
+        from app.extensions import db
+        teacher = User(username='forgetful', full_name='Forgetful Ma\'am', role='teacher')
+        teacher.set_password('originalpw1')
+        db.session.add(teacher)
+        db.session.commit()
+        teacher_id = teacher.id
+
+    admin_client.post(f'/admin/users/{teacher_id}/edit', data={
+        'full_name': "Forgetful Ma'am",
+        'role': 'teacher',
+        'new_password': 'freshstart2026',
+        'is_active': 'on',
+    }, follow_redirects=True)
+
+    with app.app_context():
+        teacher = User.query.get(teacher_id)
+        assert teacher.check_password('freshstart2026')
+        assert not teacher.check_password('originalpw1')
